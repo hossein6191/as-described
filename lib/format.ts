@@ -124,6 +124,36 @@ export function statusLabel(status: string, verdict?: string): string {
   }
 }
 
+/** The status as one lowercase word or two, for a cell that has no date to show. */
+export function statusWord(status: string): string {
+  switch (status) {
+    case "paid":
+      return "in escrow";
+    case "disputed":
+      return "disputed";
+    case "settled":
+      return "settled";
+    case "settled_stale":
+      return "settled by rule";
+    case "released":
+      return "released";
+    case "missing":
+      return "missing";
+    case "refunded":
+      return "refunded";
+    default:
+      return status || "—";
+  }
+}
+
+/** ISO of `iso` plus `hours`; "" for a blank or unreadable date. */
+export function plusHours(iso: string | null | undefined, hours: number): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  return new Date(t + hours * 3600000).toISOString();
+}
+
 export const KIND_EMOJI: Record<string, string> = {
   recipes: "🍳",
   templates: "✉️",

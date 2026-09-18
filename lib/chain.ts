@@ -8,6 +8,12 @@
 // holds the item, the item is returned with source "snapshot" (the page shows a banner);
 // otherwise a plain Error("could not reach the network") is thrown. A failed read is never
 // "no data", and never proof that a write failed: check the tx votes instead.
+//
+// Studio allows 30 gen_call / sim_fundAccount requests a minute from one browser. Every view
+// answer is therefore cached for 30 s (keyed by register, view and args) and two components
+// asking for the same view share one request; a rate-limited read rejects with RATE_LIMITED
+// (see lib/rpc.ts) and the page counts the cooldown down. invalidateReads() drops the cache
+// once a transaction is final or the faucet paid, so the next read is live again.
 
 export const CHAIN_ID = 61999;
 export const CHAIN_ID_HEX = "0xf22f";
@@ -112,8 +118,21 @@ import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 import type { Address } from "viem";
 import { registerOverride, siteRegister } from "./register";
-import { decodeTx, rpc, sleep, withRetry, type RawTx } from "./rpc";
+import {
+  RATE_LIMITED,
+  createReadCache,
+  decodeTx,
+  isRateLimitError,
+  noteFailure,
+  rpc,
+  sleep,
+  waitForCooldown,
+  withRetry,
+  type RawTx,
+} from "./rpc";
 import { getChainId, getSigner, chainName } from "./wallet";
+
+export { RATE_LIMITED, cooldownRemainingMs, waitForCooldown } from "./rpc";
 
 export const isMock = process.env.NEXT_PUBLIC_MOCK === "1";
 /** The register in use: this browser's choice from /deploy first, then the site's default. */
@@ -122,6 +141,9 @@ export const contractAddress = (): string => registerOverride() || siteRegister(
 export const NETWORK_ERROR = "could not reach the network";
 /** Thrown by reads when the site has no register address yet (before the owner deploys). */
 export const NO_REGISTER = "no register is configured yet";
+/** What the faucet says when Studio refused sim_fundAccount three times. */
+export const FAUCET_REFUSED =
+  "Studio refused the faucet request (it allows 30 requests a minute from one browser). Try again in a minute.";
 
 // The SDK's studionet object carries a dead explorer URL; the RPC and explorer hosts are set here.
 const studio = {
@@ -212,16 +234,28 @@ function parseView(raw: unknown): unknown {
   return raw;
 }
 
-/** One view call with retries. Throws the plain network error when it never answered. */
+/** How long a view answer is reused. Browser only: a route handler must see the chain as it is. */
+export const READ_TTL_MS = 30_000;
+const views = createReadCache<unknown>(typeof window === "undefined" ? 0 : READ_TTL_MS);
+
+/** Forget every cached view answer. Called once a transaction is final or the faucet paid. */
+export const invalidateReads = () => views.clear();
+
+/**
+ * One view call with retries, through the cache. Throws RATE_LIMITED when Studio is
+ * rate-limiting this browser, the plain network error when it never answered.
+ */
 async function view(fn: string, args: (string | number)[] = [], register?: string): Promise<unknown> {
   const address = register || contractAddress();
   if (!address) throw new Error(NO_REGISTER);
+  const key = `${address.toLowerCase()}|${fn}|${JSON.stringify(args)}`;
   try {
-    const raw = await withRetry(() =>
-      reader().readContract({ address: address as Address, functionName: fn, args }),
+    const raw = await views.get(key, () =>
+      withRetry(() => reader().readContract({ address: address as Address, functionName: fn, args })),
     );
     return parseView(raw);
-  } catch {
+  } catch (e) {
+    if (e instanceof Error && e.message === RATE_LIMITED) throw e;
     throw new Error(NETWORK_ERROR);
   }
 }
@@ -359,7 +393,8 @@ async function withSnapshot<T>(
     const same = !!s?.register && s.register.toLowerCase() === contractAddress().toLowerCase();
     const item = s && same ? fromSnapshot(s) : null;
     if (item !== null && item !== undefined) return { data: item, source: "snapshot" };
-    throw e instanceof Error && e.message === NETWORK_ERROR ? e : new Error(NETWORK_ERROR);
+    if (e instanceof Error && (e.message === NETWORK_ERROR || e.message === RATE_LIMITED)) throw e;
+    throw new Error(NETWORK_ERROR);
   }
 }
 
@@ -394,7 +429,8 @@ export async function readOrder(id: string, register?: string): Promise<ReadResu
     },
     (s) => byId(s.orders, id),
   );
-  // The order row carries no title of its own; borrow it from the listing when missing.
+  // The order row carries no title of its own; borrow it from the listing when missing
+  // (the listing is usually already in the read cache from the page that led here).
   if (r.data && !r.data.title && r.data.listing) {
     try {
       const l = await readListing(r.data.listing, register);
@@ -575,12 +611,38 @@ export async function balanceOf(address: string): Promise<bigint> {
   return BigInt(hex || "0x0");
 }
 
-/** Faucet: sim_fundAccount with 10 GEN (amount in wei as a JS number). Resolves when the balance moved. */
+/** Pause between faucet tries: sim_fundAccount shares the 30/min bucket with the reads. */
+const FAUCET_PAUSE_MS = 10_000;
+const FAUCET_TRIES = 3;
+
+/**
+ * Faucet: sim_fundAccount with 10 GEN (amount in wei as a JS number), up to three tries ten
+ * seconds apart, each one after the shared cooldown. Resolves when the balance moved; a
+ * refusal on every try is FAUCET_REFUSED.
+ */
 export async function faucet(address: string): Promise<bigint> {
   if (isMock) return mock.faucet(address);
-  const before = await balanceOf(address);
-  // `amount` is wei as a JS number; a decimal string makes the node compare str with int.
-  await rpc("sim_fundAccount", { account_address: address, amount: 10e18 });
+  let before: bigint;
+  try {
+    before = await balanceOf(address);
+  } catch (e) {
+    throw new Error(isRateLimitError(e) || (e instanceof Error && e.message === RATE_LIMITED) ? FAUCET_REFUSED : NETWORK_ERROR);
+  }
+  let sent = false;
+  for (let i = 0; i < FAUCET_TRIES && !sent; i++) {
+    await waitForCooldown();
+    try {
+      // `amount` is wei as a JS number; a decimal string makes the node compare str with int.
+      await rpc("sim_fundAccount", { account_address: address, amount: 10e18 });
+      sent = true;
+    } catch (e) {
+      // A refusal is a refusal whatever the shape: 429 behind CORS, -32029, or a dropped
+      // request. A rate-limited one also starts the shared cooldown, so the reads back off too.
+      noteFailure(e);
+      if (i === FAUCET_TRIES - 1) throw new Error(FAUCET_REFUSED);
+      await sleep(FAUCET_PAUSE_MS);
+    }
+  }
   const started = Date.now();
   while (Date.now() - started < 60_000) {
     await sleep(2000);

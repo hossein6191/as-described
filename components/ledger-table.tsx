@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import type { LedgerRow } from "@/lib/chain";
 import { addressUrl } from "@/lib/chain";
-import { ago, gen, short } from "@/lib/format";
+import { ago, gen, short, statusWord } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,10 @@ const money = (r: LedgerRow) => {
   if (s > 0n) parts.push(`${gen(s)} → seller`);
   return parts.join(", ");
 };
+
+// Ledger rows carry judged_at only, so an unjudged row shows its status word instead of a blank cell.
+const whenCell = (r: LedgerRow) =>
+  r.judgedAt ? ago(r.judgedAt) : r.openedAt ? ago(r.openedAt) : <span className="text-muted-foreground/80">{statusWord(r.status)}</span>;
 
 const dispute = (r: LedgerRow) =>
   r.sectionIndex >= 0 && r.promiseIndex >= 0 ? `section ${r.sectionIndex + 1} vs P${r.promiseIndex + 1}` : "";
@@ -64,7 +68,7 @@ export function LedgerTable({ rows, className, showTitle = true }: { rows: Ledge
                 </td>
                 <td className="px-3 py-2 text-xs text-muted-foreground">{dispute(r) || "—"}</td>
                 <td className="px-3 py-2 text-xs">{money(r)}</td>
-                <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{ago(r.judgedAt || r.openedAt)}</td>
+                <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{whenCell(r)}</td>
               </tr>
             ))}
           </tbody>
@@ -102,7 +106,7 @@ export function LedgerTable({ rows, className, showTitle = true }: { rows: Ledge
               <dt>Money</dt>
               <dd className="text-foreground">{money(r)}</dd>
               <dt>When</dt>
-              <dd>{ago(r.judgedAt || r.openedAt)}</dd>
+              <dd>{whenCell(r)}</dd>
             </dl>
           </li>
         ))}

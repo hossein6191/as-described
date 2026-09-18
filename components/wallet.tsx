@@ -111,6 +111,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // The provider in use and its listeners live in refs: they are not render state.
   const active = React.useRef<{ detail: EIP6963ProviderDetail; off: () => void } | null>(null);
   const reconnected = React.useRef(false);
+  // A silent reconnect once showed 0 GEN for a funded wallet (one dropped eth_getBalance).
+  // Every connect schedules a second balance read 4 s later, and a balance shown as 0 is
+  // re-read a few more times; an empty wallet stays at 0 after that.
+  const laterRead = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const zeroChecks = React.useRef(0);
 
   const refreshBalanceFor = React.useCallback(async (addr: string) => {
     if (!addr) return;
@@ -121,6 +126,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /** One more balance read in 4 s (replacing any already scheduled). */
+  const refreshBalanceLater = React.useCallback(
+    (addr: string) => {
+      if (laterRead.current) clearTimeout(laterRead.current);
+      laterRead.current = setTimeout(() => {
+        laterRead.current = undefined;
+        void refreshBalanceFor(addr);
+      }, 4000);
+    },
+    [refreshBalanceFor],
+  );
+
   const clearSession = React.useCallback(() => {
     active.current?.off();
     active.current = null;
@@ -128,6 +145,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setAddress("");
     setChainId(null);
     setBalanceAtto(0n);
+    if (laterRead.current) clearTimeout(laterRead.current);
+    laterRead.current = undefined;
   }, []);
 
   /** Wires accountsChanged/chainChanged for one provider and returns the unsubscribe. */
@@ -170,9 +189,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAddress(addr);
       rememberWallet(detail.info.rdns);
       setChainId(await getChainId(detail.provider));
+      zeroChecks.current = 0;
       await refreshBalanceFor(addr);
+      refreshBalanceLater(addr);
     },
-    [refreshBalanceFor, watch],
+    [refreshBalanceFor, refreshBalanceLater, watch],
+  );
+
+  // A connected wallet showing 0 GEN is re-read (up to three times, 4 s apart) before it is believed.
+  React.useEffect(() => {
+    if (!address || balanceAtto !== 0n || zeroChecks.current >= 3) return;
+    zeroChecks.current++;
+    refreshBalanceLater(address);
+  }, [address, balanceAtto, refreshBalanceLater]);
+  React.useEffect(
+    () => () => {
+      if (laterRead.current) clearTimeout(laterRead.current);
+    },
+    [],
   );
 
   /** Connect through one specific wallet: the wallet asks, then the chain is switched. */
@@ -300,8 +334,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setError("");
     try {
       setBalanceAtto(await chain.faucet(address));
+      // The chain moved (and the read cache may hold a stale balance-dependent view).
+      chain.invalidateReads();
     } catch (e) {
-      setError(errorText(e, "The faucet did not answer."));
+      setError(errorText(e, chain.FAUCET_REFUSED));
       throw e;
     }
   }, [address]);
@@ -502,21 +538,23 @@ export function WalletButton() {
     }
   };
 
+  // The chip never wraps: under 640 px only the dot and the address show (the balance is
+  // in the menu), so the header row still fits a 375 px screen.
   return (
-    <div ref={box} className="relative">
+    <div ref={box} className="relative min-w-0 max-w-full">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted"
+        className="flex max-w-full items-center gap-2 whitespace-nowrap rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted"
       >
         <span
           aria-hidden="true"
-          className={"size-2 rounded-full " + (w.onStudio ? "bg-emerald-400" : "bg-amber-400")}
+          className={"size-2 shrink-0 rounded-full " + (w.onStudio ? "bg-emerald-400" : "bg-amber-400")}
         />
         <span className="font-mono">{shortAddress(w.address)}</span>
-        <span className="text-muted-foreground">{formatGen(w.balanceAtto)}</span>
+        <span className="hidden text-muted-foreground sm:inline">{formatGen(w.balanceAtto)}</span>
       </button>
       {open && (
         <div
@@ -525,6 +563,9 @@ export function WalletButton() {
         >
           <div className="px-2 py-1 text-xs text-muted-foreground">
             {w.onStudio ? "GenLayer Studio · 61999" : `On ${chainName(w.chainId)}`}
+          </div>
+          <div className="px-2 pb-1 text-xs text-muted-foreground sm:hidden">
+            Balance <span className="text-foreground">{formatGen(w.balanceAtto)}</span>
           </div>
           <MenuItem onClick={() => void copy()}>{copied ? "Copied" : "Copy address"}</MenuItem>
           <a

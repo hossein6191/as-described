@@ -7,7 +7,7 @@
 // too, with nothing stored. The rail reads the tally, not the status, and says so plainly.
 
 import * as React from "react";
-import { txStatus, txUrl, type TxStatus } from "@/lib/chain";
+import { invalidateReads, txStatus, txUrl, type TxStatus } from "@/lib/chain";
 import { STAGES } from "@/lib/rpc";
 import { useWallet } from "@/components/wallet";
 
@@ -86,6 +86,9 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
     if (!status || !isFinal(status)) return;
     if (doneFor.current === hash) return;
     doneFor.current = hash;
+    // The cached views are stale the moment the chain moved: drop them before the page
+    // re-reads in onDone, so the refresh is a live read and not the 30 s cache.
+    invalidateReads();
     void refreshRef.current();
     onDoneRef.current?.(status);
   }, [status, hash]);

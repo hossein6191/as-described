@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { NO_REGISTER } from "@/lib/chain";
-import { RefreshCw, WifiOff, Camera } from "lucide-react";
+import { NO_REGISTER, RATE_LIMITED, cooldownRemainingMs } from "@/lib/chain";
+import { RefreshCw, WifiOff, Camera, Hourglass } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,6 +24,47 @@ export function SnapshotBanner({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Seconds left on the shared rate-limit cooldown, ticking, and `onDone` once when it ends.
+ * A cooldown that is already over fires `onDone` on the next tick.
+ */
+function useCooldown(onDone: () => void): number {
+  const [left, setLeft] = React.useState(() => Math.ceil(cooldownRemainingMs() / 1000));
+  const doneRef = React.useRef(onDone);
+  React.useEffect(() => {
+    doneRef.current = onDone;
+  });
+  React.useEffect(() => {
+    let fired = false;
+    const tick = () => {
+      const ms = cooldownRemainingMs();
+      setLeft(Math.ceil(ms / 1000));
+      if (ms === 0 && !fired) {
+        fired = true;
+        clearInterval(timer);
+        doneRef.current();
+      }
+    };
+    const timer = setInterval(tick, 500);
+    tick();
+    return () => clearInterval(timer);
+  }, []);
+  return left;
+}
+
+/** The rate-limit message with its countdown; retries by itself when the cooldown ends. */
+function RateLimited({ onRetry }: { onRetry: () => void }) {
+  const left = useCooldown(onRetry);
+  return (
+    <>
+      <p className="font-medium">Studio is rate-limiting this browser (30 reads a minute).</p>
+      <p className="text-muted-foreground">
+        Retrying in a moment…{left > 0 ? ` ${left} s` : ""} Nothing is wrong with your order or your wallet.
+      </p>
+    </>
+  );
+}
+
 /** A failed read is never "no data". Say the network did not answer and offer a retry. */
 export function ReadError({
   onRetry,
@@ -36,19 +77,27 @@ export function ReadError({
   className?: string;
   compact?: boolean;
 }) {
+  const limited = detail === RATE_LIMITED;
   return (
     <div
       role="alert"
       className={cn(
-        "flex flex-col gap-3 rounded-xl border border-breaks/40 bg-breaks/10 p-4 text-sm sm:flex-row sm:items-center sm:justify-between",
+        "flex flex-col gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between",
+        limited ? "border-gold/40 bg-gold/10" : "border-breaks/40 bg-breaks/10",
         compact && "p-3 text-xs",
         className,
       )}
     >
       <div className="flex items-start gap-2">
-        <WifiOff className="mt-0.5 size-4 shrink-0 text-breaks" />
+        {limited ? (
+          <Hourglass className="mt-0.5 size-4 shrink-0 text-gold" />
+        ) : (
+          <WifiOff className="mt-0.5 size-4 shrink-0 text-breaks" />
+        )}
         <div>
-          {detail === NO_REGISTER ? (
+          {limited ? (
+            <RateLimited onRetry={onRetry} />
+          ) : detail === NO_REGISTER ? (
             <>
               <p className="font-medium">No register yet.</p>
               <p className="text-muted-foreground">

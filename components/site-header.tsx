@@ -16,17 +16,19 @@ const NAV = [
   { href: "/deploy", label: "Deploy" },
 ] as const;
 
-export function NetworkBadge({ className }: { className?: string }) {
+/** The network pill. With `compact`, the text goes under 420 px and only the dot stays. */
+export function NetworkBadge({ className, compact }: { className?: string; compact?: boolean }) {
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 text-[11px] font-medium whitespace-nowrap text-primary",
+        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 text-[11px] font-medium whitespace-nowrap text-primary",
         className,
       )}
-      title="GenLayer Studio test network"
+      title={`GenLayer Studio test network (chain ${CHAIN_ID})`}
+      aria-label={`GenLayer Studio, chain ${CHAIN_ID}`}
     >
       <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
-      Studio · {CHAIN_ID}
+      <span className={cn(compact && "hidden min-[420px]:inline")}>Studio · {CHAIN_ID}</span>
     </span>
   );
 }
@@ -36,12 +38,13 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="container-site flex flex-col gap-2 py-2 sm:h-16 sm:flex-row sm:items-center sm:gap-6 sm:py-0">
-        <div className="flex items-center justify-between gap-3">
-          <Link href="/" className="flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <Link href="/" className="flex shrink-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <Logo />
           </Link>
-          <div className="flex items-center gap-2 sm:hidden">
-            <NetworkBadge />
+          {/* The mobile row may shrink but never push the page wider than the screen. */}
+          <div className="flex min-w-0 items-center gap-2 overflow-hidden sm:hidden">
+            <NetworkBadge compact />
             <WalletButton />
           </div>
         </div>

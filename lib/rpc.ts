@@ -7,6 +7,14 @@
 // retry eight times with a growing pause, about forty seconds in all, and only then fail.
 // A failed read is never an answer: callers must say "could not reach the network", never
 // "no data", and must never conclude a write failed from a read that failed.
+//
+// Studio also rate-limits: every gen_call (contract read) and sim_fundAccount from one
+// browser shares a bucket of 30 requests a minute (eth_* reads have their own 300/min). A
+// 429 carries no Access-Control-Allow-Origin header, so in the browser it only surfaces as
+// the CORS TypeError "Failed to fetch". Retrying that eight times is what empties the bucket
+// for everyone else on the page, so a rate-limited request stops at once, starts one shared
+// cooldown, and rejects with RATE_LIMITED; requests that begin during the cooldown wait for
+// it to end, then try. The helpers here are pure and unit-tested from node.
 
 export const RPC_URL = "https://studio.genlayer.com/api";
 
@@ -27,9 +35,137 @@ export class RpcError extends Error {
   }
 }
 
+// ---- rate limiting ----------------------------------------------------------
+
+/** The error message a read rejects with while Studio is rate-limiting this browser. */
+export const RATE_LIMITED = "studio is rate-limiting this browser";
+/** Studio's JSON-RPC code for "Rate limit exceeded". */
+export const RATE_LIMIT_CODE = -32029;
+/** The cooldown when the answer did not say how long (a browser never sees the 429 itself). */
+export const COOLDOWN_MS = 20_000;
+/** Longest cooldown honoured from retry_after_seconds, so a bad header cannot park the site. */
+const MAX_COOLDOWN_MS = 90_000;
+/** How many reads may sit in their retry loop at once; the rest wait for a slot. */
+export const MAX_RETRYING = 3;
+
+type Shape = { code?: unknown; message?: unknown; data?: unknown; details?: unknown; cause?: unknown; status?: unknown; name?: unknown };
+const shape = (e: unknown): Shape | null => (e && typeof e === "object" ? (e as Shape) : null);
+
+/** Walks an error and its `cause` chain (viem wraps the transport error) and yields each link. */
+function* chain(e: unknown): Generator<Shape> {
+  let cur = e;
+  for (let depth = 0; depth < 6 && cur; depth++) {
+    const s = shape(cur);
+    if (!s) return;
+    yield s;
+    cur = s.cause;
+  }
+}
+
+/** The browser's fetch TypeError: "Failed to fetch" (Chrome), "Load failed" (Safari), "NetworkError…" (Firefox). */
+const FETCH_FAILED = /failed to fetch|load failed|networkerror when attempting|network request failed/i;
+
+/**
+ * True when Studio (or the browser on its behalf) refused the request for rate limiting: a
+ * JSON-RPC error -32029 / "Rate limit exceeded", an HTTP 429, or the CORS TypeError a 429
+ * turns into in the browser.
+ */
+export function isRateLimitError(e: unknown): boolean {
+  for (const s of chain(e)) {
+    if (s.code === RATE_LIMIT_CODE || s.status === 429) return true;
+    for (const text of [s.message, s.details]) {
+      if (typeof text !== "string") continue;
+      if (/rate limit/i.test(text) || /\b429\b/.test(text) || FETCH_FAILED.test(text)) return true;
+    }
+  }
+  return typeof e === "string" && (FETCH_FAILED.test(e) || /rate limit/i.test(e));
+}
+
+/** `data.retry_after_seconds` (or `retry_after`) from a rate-limit error, in ms; null when unreadable. */
+export function retryAfterMs(e: unknown): number | null {
+  for (const s of chain(e)) {
+    const d = shape(s.data);
+    const raw = d ? (d as Record<string, unknown>).retry_after_seconds ?? (d as Record<string, unknown>).retry_after : undefined;
+    const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n > 0) return Math.min(MAX_COOLDOWN_MS, Math.ceil(n * 1000));
+  }
+  return null;
+}
+
+let cooldownUntil = 0;
+let cooldownWait: Promise<void> | null = null;
+
+/** Milliseconds left on the shared cooldown; 0 when none. */
+export const cooldownRemainingMs = (now: number = Date.now()): number => Math.max(0, cooldownUntil - now);
+
+/** Starts (or extends) the shared cooldown. Returns when it ends. */
+export function startCooldown(ms: number = COOLDOWN_MS, now: number = Date.now()): number {
+  const until = now + Math.max(0, ms);
+  if (until > cooldownUntil) cooldownUntil = until;
+  return cooldownUntil;
+}
+
+/** Test hook: forget the cooldown. */
+export function clearCooldown(): void {
+  cooldownUntil = 0;
+  cooldownWait = null;
+}
+
+/**
+ * Resolves once the cooldown is over. Every waiter shares one timer; a cooldown extended
+ * while they wait keeps them waiting (the timer re-arms) rather than releasing them early.
+ */
+export function waitForCooldown(): Promise<void> {
+  if (cooldownRemainingMs() === 0) return Promise.resolve();
+  if (!cooldownWait) {
+    cooldownWait = (async () => {
+      let left = cooldownRemainingMs();
+      while (left > 0) {
+        await sleep(left);
+        left = cooldownRemainingMs();
+      }
+      cooldownWait = null;
+    })();
+  }
+  return cooldownWait;
+}
+
+/**
+ * Called with every failed request. A rate-limit failure starts the cooldown (honouring a
+ * readable retry_after) and returns true; anything else returns false and leaves it alone.
+ */
+export function noteFailure(e: unknown, now: number = Date.now()): boolean {
+  if (!isRateLimitError(e)) return false;
+  startCooldown(retryAfterMs(e) ?? COOLDOWN_MS, now);
+  return true;
+}
+
+// The retry fan-out cap: a page with twenty reads that all hit the flaky minute would
+// otherwise run twenty retry loops side by side. Only MAX_RETRYING loops run at once.
+let retrying = 0;
+const retryQueue: Array<() => void> = [];
+const acquireRetrySlot = (): Promise<void> => {
+  if (retrying < MAX_RETRYING) {
+    retrying++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((r) => retryQueue.push(r));
+};
+const releaseRetrySlot = () => {
+  const next = retryQueue.shift();
+  if (next) next();
+  else retrying--;
+};
+/** Test hook: how many retry loops are running right now. */
+export const retryingCount = () => retrying;
+
 let nextId = 1;
 
-/** One JSON-RPC call. Throws RpcError on a JSON-RPC error, Error on transport failure. */
+/**
+ * One JSON-RPC call. Throws RpcError on a JSON-RPC error (an HTTP 429 becomes the -32029
+ * rate-limit error, with retry_after_seconds when the body or header carries it), Error on
+ * transport failure.
+ */
 export async function rpc<T = unknown>(
   method: string,
   params: unknown = [],
@@ -41,6 +177,7 @@ export async function rpc<T = unknown>(
     body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     cache: "no-store",
   });
+  if (res.status === 429) throw await rateLimitErrorFrom(res);
   if (!res.ok) throw new Error(`rpc ${method}: HTTP ${res.status}`);
   const body = (await res.json()) as {
     result?: T;
@@ -56,9 +193,29 @@ export async function rpc<T = unknown>(
   return body.result as T;
 }
 
+/** The RpcError for a 429 answer: the JSON-RPC error in the body when there is one, else the Retry-After header. */
+async function rateLimitErrorFrom(res: Response): Promise<RpcError> {
+  let data: unknown;
+  let message = "Rate limit exceeded";
+  try {
+    const body = (await res.json()) as { error?: { message?: string; data?: unknown } };
+    if (body?.error) {
+      message = body.error.message || message;
+      data = body.error.data;
+    }
+  } catch {
+    /* not JSON: the header is all there is */
+  }
+  const header = Number(res.headers.get("retry-after"));
+  if (!retryAfterMs({ data }) && Number.isFinite(header) && header > 0) data = { retry_after_seconds: header };
+  return new RpcError(message, RATE_LIMIT_CODE, data);
+}
+
 /**
  * Runs `fn` up to `tries` times with the backoff schedule above. Every error is retried:
  * on Studio a read can fail for reasons that have nothing to do with the request.
+ * Except rate limiting: that starts the shared cooldown and rejects at once with
+ * RATE_LIMITED, and every attempt that begins during a cooldown first waits for it to end.
  */
 export async function withRetry<T>(
   fn: (attempt: number) => Promise<T>,
@@ -66,15 +223,26 @@ export async function withRetry<T>(
   onRetry?: (attempt: number, error: unknown) => void,
 ): Promise<T> {
   let last: unknown;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn(i);
-    } catch (e) {
-      last = e;
-      if (i === tries - 1) break;
-      onRetry?.(i, e);
-      await sleep(RETRY_SCHEDULE_MS[Math.min(i, RETRY_SCHEDULE_MS.length - 1)]);
+  let slot = false;
+  try {
+    for (let i = 0; i < tries; i++) {
+      await waitForCooldown();
+      try {
+        return await fn(i);
+      } catch (e) {
+        if (noteFailure(e)) throw new Error(RATE_LIMITED);
+        last = e;
+        if (i === tries - 1) break;
+        onRetry?.(i, e);
+        if (!slot) {
+          await acquireRetrySlot();
+          slot = true;
+        }
+        await sleep(RETRY_SCHEDULE_MS[Math.min(i, RETRY_SCHEDULE_MS.length - 1)]);
+      }
     }
+  } finally {
+    if (slot) releaseRetrySlot();
   }
   throw last instanceof Error ? last : new Error(String(last));
 }
@@ -82,6 +250,54 @@ export async function withRetry<T>(
 /** JSON-RPC call with the retry policy. */
 export const rpcRetry = <T = unknown>(method: string, params: unknown = [], tries?: number) =>
   withRetry<T>(() => rpc<T>(method, params), tries);
+
+// ---- read cache --------------------------------------------------------------
+// Two components asking for the same view share one request, and an answer is reused for
+// `ttlMs`. Failures are never stored. lib/chain.ts keeps one of these for the views.
+
+export type ReadCache<T> = {
+  /** the cached or in-flight value for `key`, or a fresh call of `load` */
+  get: (key: string, load: () => Promise<T>) => Promise<T>;
+  /** forget everything stored (in-flight requests still complete and are then dropped) */
+  clear: () => void;
+  /** test hook: how many keys hold a value right now */
+  size: () => number;
+};
+
+export function createReadCache<T>(ttlMs: number, now: () => number = Date.now): ReadCache<T> {
+  const done = new Map<string, { value: T; at: number }>();
+  const inflight = new Map<string, Promise<T>>();
+  let generation = 0;
+  return {
+    get(key, load) {
+      const hit = done.get(key);
+      if (hit && ttlMs > 0 && now() - hit.at < ttlMs) return Promise.resolve(hit.value);
+      if (hit) done.delete(key);
+      const running = inflight.get(key);
+      if (running) return running;
+      const gen = generation;
+      const p = load().then(
+        (value) => {
+          if (inflight.get(key) === p) inflight.delete(key);
+          if (gen === generation && ttlMs > 0) done.set(key, { value, at: now() });
+          return value;
+        },
+        (e) => {
+          if (inflight.get(key) === p) inflight.delete(key);
+          throw e;
+        },
+      );
+      inflight.set(key, p);
+      return p;
+    },
+    clear() {
+      generation++;
+      done.clear();
+      inflight.clear();
+    },
+    size: () => done.size,
+  };
+}
 
 // ---- decoding a transaction ----------------------------------------------
 
