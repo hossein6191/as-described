@@ -9,7 +9,8 @@ import { createHash } from "node:crypto";
 import { verifyMessage } from "viem";
 import { manifestOf, uploadMessage } from "@/lib/api";
 import { isMock, readListing, NETWORK_ERROR } from "@/lib/chain";
-import { isListingId, savePack } from "@/lib/store";
+import { isListingId, savePack, storageAvailable } from "@/lib/store";
+import { demoSectionsFor } from "@/lib/demo-store";
 import { chainRegister, registerOf } from "@/lib/register-param";
 
 export const runtime = "nodejs";
@@ -86,6 +87,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!valid) return reply(401, { ok: false, reason: "the signature does not match the upload message for this listing" });
   }
 
+  // A demo pack's text ships with the site: nothing to store, the pack is already deliverable.
+  if (demoSectionsFor(hashes)) return reply(200, { ok: true, listing: id, sections: texts.length, stored: "demo" });
+
+  if (!(await storageAvailable())) {
+    return reply(503, {
+      ok: false,
+      reason: "This site has no storage for uploaded packs yet, so only the demo packs can be sold here. Site owner: connect a Blob store in Vercel.",
+    });
+  }
   try {
     await savePack({
       register,
@@ -95,8 +105,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       sections: texts,
       uploadedAt: new Date().toISOString(),
     });
-  } catch {
-    return reply(500, { ok: false, reason: "the pack could not be stored" });
+  } catch (e) {
+    const why = e instanceof Error ? e.message.slice(0, 120) : "";
+    return reply(500, { ok: false, reason: "the pack could not be stored" + (why ? ": " + why : "") });
   }
-  return reply(200, { ok: true, listing: id, sections: texts.length });
+  return reply(200, { ok: true, listing: id, sections: texts.length, stored: "store" });
 }

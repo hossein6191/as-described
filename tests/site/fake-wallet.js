@@ -26,12 +26,24 @@
     );
 
   const keys = window.__FAKE_KEYS || {};
+  // A real extension keeps the site's permission, the chosen account and the chain across
+  // page loads; this one keeps them in localStorage under one key, per origin.
+  const PERSIST = "fake-wallet.state";
+  let persisted = {};
+  try {
+    persisted = JSON.parse(localStorage.getItem(PERSIST) || "{}") || {};
+  } catch {}
   const state = {
-    current: "seller",
-    chainHex: STUDIO_HEX,
-    connected: false,
+    current: persisted.current || "seller",
+    chainHex: persisted.chainHex || STUDIO_HEX,
+    connected: !!persisted.connected,
     accounts: {}, // name -> viem account, filled once viem loads
     chains: { [STUDIO_HEX]: { chainId: STUDIO_HEX, chainName: "GenLayer Studio" } },
+  };
+  const persist = () => {
+    try {
+      localStorage.setItem(PERSIST, JSON.stringify({ current: state.current, chainHex: state.chainHex, connected: state.connected }));
+    } catch {}
   };
   const log = [];
   const calls = {};
@@ -149,6 +161,7 @@
         case "eth_requestAccounts": {
           const acct = await account();
           state.connected = true;
+          persist();
           return [acct.address];
         }
         case "eth_accounts": {
@@ -166,6 +179,7 @@
           if (!state.chains[wanted.toLowerCase()]) throw rpcError(4902, `Unrecognized chain ID "${wanted}". Try adding the chain using wallet_addEthereumChain first.`);
           if (state.chainHex !== wanted.toLowerCase()) {
             state.chainHex = wanted.toLowerCase();
+            persist();
             emit("chainChanged", state.chainHex);
           }
           return null;
@@ -176,12 +190,14 @@
           state.chains[String(p.chainId).toLowerCase()] = p;
           if (state.chainHex !== String(p.chainId).toLowerCase()) {
             state.chainHex = String(p.chainId).toLowerCase();
+            persist();
             emit("chainChanged", state.chainHex);
           }
           return null;
         }
         case "wallet_revokePermissions":
           state.connected = false;
+          persist();
           emit("accountsChanged", []);
           return null;
         case "wallet_requestPermissions":
@@ -225,6 +241,7 @@
     async use(name) {
       if (!keys[name]) throw new Error(`no key named "${name}"`);
       state.current = name;
+      persist();
       const acct = await account();
       if (state.connected) emit("accountsChanged", [acct.address]);
       return acct.address;
@@ -233,6 +250,7 @@
       const h = String(hex).toLowerCase();
       state.chains[h] ||= { chainId: h };
       state.chainHex = h;
+      persist();
       emit("chainChanged", h);
       return h;
     },

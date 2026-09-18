@@ -20,6 +20,25 @@ const LOCAL_DIR = path.join(process.cwd(), ".data", "packs");
 
 export const blobOn = (): boolean => !!process.env.BLOB_READ_WRITE_TOKEN;
 
+/** "blob" on Vercel Blob, "local" when the .data/ folder is writable, "none" otherwise (a read-only host with no bucket). */
+let backendMemo: Promise<"blob" | "local" | "none"> | null = null;
+export function storageBackend(): Promise<"blob" | "local" | "none"> {
+  if (!backendMemo) {
+    backendMemo = (async () => {
+      if (blobOn()) return "blob";
+      try {
+        await mkdir(LOCAL_DIR, { recursive: true });
+        await writeFile(path.join(LOCAL_DIR, ".probe"), "ok", "utf8");
+        return "local";
+      } catch {
+        return "none";
+      }
+    })();
+  }
+  return backendMemo;
+}
+export const storageAvailable = async (): Promise<boolean> => (await storageBackend()) !== "none";
+
 // Packs are keyed by (register, listing): the same listing id exists on every register.
 const keyOf = (register: string, id: string) => `${register.toLowerCase()}/${id}`;
 const pathnameOf = (register: string, id: string) => `packs/${keyOf(register, id)}.json`;

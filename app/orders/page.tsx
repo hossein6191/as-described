@@ -15,7 +15,9 @@ import { useRead } from "@/components/use-read";
 import { useTx, failureOf } from "@/components/use-tx";
 import { useWallet } from "@/components/wallet";
 import { isMock, readListing, readListingIds, readOrder, readOrdersOfBuyer, type Listing, type Order } from "@/lib/chain";
-import { MOCK_BUYER } from "@/lib/chain-mock";
+import { MOCK_BUYER, mockPackUploaded } from "@/lib/chain-mock";
+import { packStatus } from "@/lib/api";
+import { AlertTriangle, Upload } from "lucide-react";
 import { gen, kindEmoji, windowLabel } from "@/lib/format";
 
 async function readMine(address: string) {
@@ -32,6 +34,19 @@ function MyListing({ l, onChanged }: { l: Listing; onChanged: () => void }) {
   const tx = useTx((s) => {
     if (s.applied && !failureOf(s)) onChanged();
   });
+  // Whether buyers can actually read the pack: the text must have reached the store (or be a demo pack).
+  const [uploaded, setUploaded] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    let alive = true;
+    if (isMock) {
+      Promise.resolve(mockPackUploaded(l.id)).then((u) => alive && setUploaded(u));
+    } else {
+      packStatus(l.id).then((s) => alive && setUploaded(s.uploaded)).catch(() => alive && setUploaded(null));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [l.id]);
   return (
     <li className="rounded-xl border bg-card p-4 text-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -56,6 +71,19 @@ function MyListing({ l, onChanged }: { l: Listing; onChanged: () => void }) {
           ) : null}
         </div>
       </div>
+      {uploaded === false ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="size-3.5 shrink-0 text-gold" />
+            The text of this pack is not uploaded yet, so buyers cannot read it.
+          </span>
+          <Button asChild size="sm" variant="cool">
+            <Link href={`/sell?upload=${l.id}`}>
+              <Upload /> Upload the text
+            </Link>
+          </Button>
+        </div>
+      ) : null}
       {tx.error ? <p className="mt-2 text-xs text-breaks">{tx.error}</p> : null}
       {tx.hash ? (
         <div className="mt-3">

@@ -29,6 +29,14 @@ async function call(path: string, init?: RequestInit): Promise<ApiReply> {
   }
 }
 
+export type StorageStatus = { available: boolean; backend: "blob" | "local" | "none" | "unknown" };
+
+/** Whether this host can store uploaded packs (the demo packs never need it). */
+export async function storageStatus(): Promise<StorageStatus> {
+  const r = (await call("/api/storage")) as ApiReply & { available?: boolean; backend?: StorageStatus["backend"] };
+  return { available: r.ok && r.available === true, backend: r.ok && r.backend ? r.backend : "unknown" };
+}
+
 export async function packStatus(listingId: string): Promise<PackStatus> {
   const r = await call(`/api/packs/${encodeURIComponent(listingId)}/status?register=${encodeURIComponent(contractAddress())}`);
   return { uploaded: r.ok && r.uploaded === true };

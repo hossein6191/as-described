@@ -13,9 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useTx, failureOf, cleanWalletError } from "@/components/use-tx";
 import { useWallet } from "@/components/wallet";
 import { WalletGate } from "@/components/wallet-gate";
-import { isMock } from "@/lib/chain";
-import { manifestOf, sha256Hex, uploadMessage, uploadPack } from "@/lib/api";
+import { isMock, readListing } from "@/lib/chain";
+import { manifestOf, sha256Hex, storageStatus, uploadMessage, uploadPack, type StorageStatus } from "@/lib/api";
 import { mockStorePack } from "@/lib/chain-mock";
+import { useRead, useSearchString } from "@/components/use-read";
+import { BlockSkeleton, ReadBlock } from "@/components/read-state";
 import { DEMO_PACKS, PROMISE_TEMPLATES, WORLD_KNOWLEDGE_WORDS } from "@/lib/demo-packs";
 import { gen, toAtto } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -36,6 +38,31 @@ const WINDOWS = [
 
 type Step = "form" | "listing" | "upload" | "done";
 
+// The demo packs' hash lists, computed once: a listing whose hashes match one of them needs no storage.
+let demoKeysPromise: Promise<string[]> | null = null;
+const demoKeys = () => {
+  if (!demoKeysPromise) {
+    demoKeysPromise = Promise.all(DEMO_PACKS.map((p) => Promise.all(p.sections.map(sha256Hex)).then((h) => h.join(","))));
+  }
+  return demoKeysPromise;
+};
+const demoSectionsFor = async (hashes: string[]): Promise<string[] | null> => {
+  const keys = await demoKeys();
+  const i = keys.indexOf(hashes.map((h) => h.toLowerCase()).join(","));
+  return i >= 0 ? [...DEMO_PACKS[i].sections] : null;
+};
+
+function StorageNote({ storage, isDemo }: { storage: StorageStatus | null; isDemo: boolean }) {
+  if (isMock || !storage || storage.available || isDemo) return null;
+  return (
+    <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
+      <AlertTriangle className="mr-1 inline size-3.5 text-gold" />
+      This site has no storage for uploaded packs yet, so only the three demo packs can be sold here. Load one above, or
+      wait for the site owner to connect a storage bucket.
+    </p>
+  );
+}
+
 export default function SellPage() {
   const w = useWallet();
   const [title, setTitle] = React.useState("");
@@ -50,6 +77,20 @@ export default function SellPage() {
   const [uploadError, setUploadError] = React.useState("");
   const [uploading, setUploading] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(false);
+  const [storage, setStorage] = React.useState<StorageStatus | null>(null);
+  const [keys, setKeys] = React.useState<string[]>([]);
+  const resumeId = new URLSearchParams(useSearchString()).get("upload") || "";
+
+  React.useEffect(() => {
+    let alive = true;
+    void storageStatus().then((st) => alive && setStorage(st));
+    void demoKeys().then((k) => alive && setKeys(k));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const isDemo = keys.includes(hashes.join(","));
+  const storageBlocked = !isMock && !!storage && !storage.available && !isDemo;
 
   // live sha256 per section
   React.useEffect(() => {
@@ -119,7 +160,7 @@ export default function SellPage() {
 
   const list = async () => {
     setSubmitted(true);
-    if (problems.length) return;
+    if (problems.length || storageBlocked) return;
     setListingId(null);
     setUploadError("");
     setStep("listing");
@@ -161,6 +202,8 @@ export default function SellPage() {
 
   const listingFailed = tx.final ? failureOf(tx.final) : "";
   const busy = step === "listing" && (tx.sending || (!!tx.hash && !tx.final));
+
+  if (resumeId) return <ResumeUpload id={resumeId} storage={storage} />;
 
   return (
     <div className="container-site space-y-8 py-8">
@@ -343,7 +386,8 @@ export default function SellPage() {
             <div className="mt-4 space-y-3">
               {step === "form" ? (
                 <WalletGate action="list a pack">
-                  <Button type="button" variant="cool" size="lg" className="w-full" onClick={() => void list()} disabled={busy}>
+                  <StorageNote storage={storage} isDemo={isDemo} />
+                  <Button type="button" variant="cool" size="lg" className="w-full" onClick={() => void list()} disabled={busy || storageBlocked}>
                     List for {(() => {
                       try {
                         return gen(toAtto(priceGen));
@@ -425,5 +469,149 @@ function StepRow({ n, label, hint, state }: { n: number; label: string; hint: st
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
     </li>
+  );
+}
+
+/**
+ * /sell?upload=L7 — the text of an already-listed pack never reached the store (a failed or
+ * skipped upload). The seller pastes the sections again; each one is hashed live and compared
+ * with what the listing committed, and the upload is signed only when every section matches.
+ */
+function ResumeUpload({ id, storage }: { id: string; storage: StorageStatus | null }) {
+  const w = useWallet();
+  const state = useRead(() => readListing(id), [id]);
+  const listing = state.data;
+  const [sections, setSections] = React.useState<string[] | null>(null);
+  const [hashes, setHashes] = React.useState<string[]>([]);
+  const [uploading, setUploading] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [done, setDone] = React.useState(false);
+
+  // First fill: the demo text when the hashes are a demo pack's, blanks otherwise.
+  React.useEffect(() => {
+    if (!listing || sections !== null) return;
+    let alive = true;
+    void demoSectionsFor(listing.hashes).then((demo) => {
+      if (alive) setSections(demo ?? listing.hashes.map(() => ""));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [listing, sections]);
+
+  React.useEffect(() => {
+    if (!sections) return;
+    let alive = true;
+    Promise.all(sections.map((t) => (t ? sha256Hex(t) : Promise.resolve("")))).then((h) => alive && setHashes(h));
+    return () => {
+      alive = false;
+    };
+  }, [sections]);
+
+  const target = (listing?.hashes ?? []).map((h) => h.toLowerCase());
+  const matches = target.map((h, i) => !!hashes[i] && hashes[i] === h);
+  const allMatch = target.length > 0 && matches.every(Boolean);
+  const isDemo = allMatch && !!sections && DEMO_PACKS.some((p) => p.sections.length === sections.length && p.sections.every((t, i) => t === sections[i]));
+  const blocked = !isMock && !!storage && !storage.available && !isDemo;
+  const mine = !!listing && !!w.address && listing.seller.toLowerCase() === w.address.toLowerCase();
+
+  const upload = async () => {
+    if (!listing || !sections || !allMatch) return;
+    setUploading(true);
+    setError("");
+    try {
+      if (isMock) {
+        mockStorePack(listing.id, sections);
+        setDone(true);
+        return;
+      }
+      const signature = await w.signMessage(uploadMessage(listing.id, await manifestOf(target)));
+      const r = await uploadPack(listing.id, sections, w.address, signature);
+      if (!r.ok) throw new Error(r.reason || "The upload was refused.");
+      setDone(true);
+    } catch (e) {
+      setError(cleanWalletError(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="container-site space-y-8 py-8">
+      <div className="space-y-1">
+        <h1 className="text-3xl font-bold tracking-tight">Upload the text of {id}</h1>
+        <p className="text-muted-foreground">
+          The listing is on chain; buyers need its text. Paste every section exactly as it was hashed, then sign the upload.
+        </p>
+      </div>
+      <ReadBlock state={state} skeleton={<BlockSkeleton lines={4} />}>
+        {(l) =>
+          !l ? (
+            <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">There is no listing named {id} on this register.</p>
+          ) : (
+            <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
+              <div className="space-y-6">
+                <div className="rounded-xl border bg-card p-4 text-sm">
+                  <p className="font-medium">{l.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {l.id} · {gen(l.priceAtto)} · {l.hashes.length} sections · seller {l.seller.slice(0, 6)}…{l.seller.slice(-4)}
+                  </p>
+                  <ol className="mt-2 space-y-1 text-xs text-muted-foreground">
+                    {l.promises.map((p, i) => (
+                      <li key={i}>P{i + 1} · {p}</li>
+                    ))}
+                  </ol>
+                </div>
+                <ol className="space-y-3">
+                  {(sections ?? []).map((t, i) => (
+                    <li key={i} className="rounded-xl border bg-card p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <Label htmlFor={`resume-${i}`}>Section {i + 1}</Label>
+                        <span className={cn("text-[11px]", matches[i] ? "text-keeps" : t ? "text-breaks" : "text-muted-foreground")}>
+                          {matches[i] ? "matches the listing" : t ? "does not match the committed hash" : "empty"}
+                        </span>
+                      </div>
+                      <Textarea id={`resume-${i}`} value={t} rows={6} onChange={(e) => setSections((ss) => (ss ?? []).map((x, j) => (j === i ? e.target.value : x)))} className="min-h-32 font-mono text-xs leading-relaxed" disabled={done} />
+                      <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground" title={target[i]}>committed {target[i]}</p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+                <div className="space-y-3 rounded-2xl border bg-card p-5">
+                  <h2 className="font-semibold">Upload</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {allMatch ? "Every section matches. Sign once and buyers can read the pack." : `${matches.filter(Boolean).length} of ${target.length} sections match so far.`}
+                  </p>
+                  {!isMock && listing && w.address && !mine ? (
+                    <p className="text-xs text-breaks">Only the wallet that listed this pack can upload its text.</p>
+                  ) : null}
+                  <StorageNote storage={storage} isDemo={isDemo} />
+                  {done ? (
+                    <div className="space-y-2 rounded-lg border border-keeps/40 bg-keeps/10 p-3 text-sm">
+                      <p className="flex items-center gap-2 font-medium">
+                        <Check className="size-4 text-keeps" /> The text is uploaded. Buyers can read {l.id} now.
+                      </p>
+                      <Button asChild variant="cool" className="w-full">
+                        <Link href={`/pack/${l.id}`}>
+                          Open {l.id} <ArrowRight />
+                        </Link>
+                      </Button>
+                    </div>
+                  ) : (
+                    <WalletGate action="upload the text">
+                      <Button type="button" variant="cool" size="lg" className="w-full" onClick={() => void upload()} disabled={!allMatch || uploading || blocked || (!isMock && !mine)}>
+                        {uploading ? <Loader2 className="animate-spin" /> : null} Sign and upload
+                      </Button>
+                    </WalletGate>
+                  )}
+                  {error ? <p className="text-sm text-breaks">{error}</p> : null}
+                </div>
+              </aside>
+            </div>
+          )
+        }
+      </ReadBlock>
+    </div>
   );
 }
