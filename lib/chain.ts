@@ -101,44 +101,48 @@ export type TxStatus = {
 
 export type ReadResult<T> = { data: T; source: "chain" | "snapshot" };
 
+import * as mock from "./chain-mock";
+
 export const isMock = process.env.NEXT_PUBLIC_MOCK === "1";
 export const contractAddress = (): string =>
   process.env.NEXT_PUBLIC_CONTRACT || "";
 
 // ---- reads (no wallet) --------------------------------------------------
 export async function readListingIds(): Promise<ReadResult<string[]>> {
+  if (isMock) return mock.readListingIds();
   return { data: [], source: "chain" };
 }
 export async function readListing(
   id: string,
 ): Promise<ReadResult<Listing | null>> {
-  void id;
+  if (isMock) return mock.readListing(id);
   return { data: null, source: "chain" };
 }
 export async function readOrder(id: string): Promise<ReadResult<Order | null>> {
-  void id;
+  if (isMock) return mock.readListing(id);
   return { data: null, source: "chain" };
 }
 export async function readOrdersOf(listing: string): Promise<ReadResult<string[]>> {
-  void listing;
+  if (isMock) return mock.readOrdersOf(listing);
   return { data: [], source: "chain" };
 }
 export async function readOrdersOfBuyer(address: string): Promise<ReadResult<string[]>> {
-  void address;
+  if (isMock) return mock.readOrdersOfBuyer(address);
   return { data: [], source: "chain" };
 }
 export async function readLedger(count: number): Promise<ReadResult<LedgerRow[]>> {
-  void count;
+  if (isMock) return mock.readLedger(count);
   return { data: [], source: "chain" };
 }
 export async function readStats(): Promise<ReadResult<Stats>> {
+  if (isMock) return mock.readStats();
   return {
     data: { listings: 0, orders: 0, kept: 0, broken: 0, unclear: 0, refunded: 0, released: 0 },
     source: "chain",
   };
 }
 export async function readBondFor(listing: string): Promise<string> {
-  void listing;
+  if (isMock) return mock.readBondFor(listing);
   return "0";
 }
 
@@ -161,15 +165,13 @@ export async function write(
   args: string[],
   valueAtto?: bigint,
 ): Promise<string> {
-  void fn;
-  void args;
-  void valueAtto;
+  if (isMock) return mock.write(fn, args, valueAtto);
   throw new Error("chain.write: not implemented (stub)");
 }
 
 /** One poll of a transaction. Pages call this every ~3 s until FINALIZED. */
 export async function txStatus(hash: string): Promise<TxStatus> {
-  void hash;
+  if (isMock) return mock.txStatus(hash);
   return {
     status: "UNKNOWN",
     votes: { agree: 0, disagree: 0, idle: 0 },
@@ -183,13 +185,13 @@ export async function txStatus(hash: string): Promise<TxStatus> {
 
 /** Balance in atto of an address (eth_getBalance). */
 export async function balanceOf(address: string): Promise<bigint> {
-  void address;
+  if (isMock) return mock.balanceOf(address);
   return 0n;
 }
 
 /** Faucet: sim_fundAccount with 10 GEN (amount in wei as a JS number). Resolves when the balance moved. */
 export async function faucet(address: string): Promise<bigint> {
-  void address;
+  if (isMock) return mock.faucet(address);
   return 0n;
 }
 
