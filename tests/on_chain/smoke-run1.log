@@ -1,0 +1,10 @@
+deploy tx 0x29282d54eefc668bdccc3eb98f0e5dbabedae33392ed1f132c57c4dc13e433b1
+As Described at 0xA1abE645e6454E7A7128005877923f1A9DC51652 · phase ALL 
+seller 0xC39d06941d9e76957E00748d9a5e42Aa6783954F · buyer 0x403787B81B15267212E4ac591e9f739068B12711 · stranger 0xB2fD3684F107a0474598C6Bae911f8F39d903d34 
+
+      list_pack  0x9f60f64bdc40243ad9319c45dab96a91a233c302cc73f16519af1cc02ed77e76  3 agree, 0 disagree, 2 idle  ERROR
+PASS  a two-letter title is refused  — [EXPECTED] a title is 3 to 60 characters
+      list_pack  0xebd4dc15b93d9beb85d67508e718af02d00bfd6bf741c6888a6900080775761a  3 agree, 0 disagree, 2 idle  ERROR
+PASS  a hash that is not 64 lowercase hex is refused  — [EXPECTED] each hash is the sha256 of one section: 64 lowercase hex ch
+      list_pack  0x30998ab8ba04ebf5666fa28247d6fe5ad878eba8dc3f61c04faa801d2a31d28d  3 agree, 0 disagree, 2 idle  ERROR
+PASS  a price below 0.1 GEN is refused  — [EXPECTED] the price is a whole number of atto between 100000000000000

@@ -1,0 +1,78 @@
+import { ExternalLink } from "lucide-react";
+
+import { Logo } from "@/components/brand/logo";
+import { addressUrl, contractAddress } from "@/lib/chain";
+import { AUTHOR, DEMO_CONTRACT, REPO_URL, SITE_TAGLINE } from "@/lib/config";
+import { short } from "@/lib/format";
+
+export function SiteFooter() {
+  const contract = contractAddress() || DEMO_CONTRACT;
+  return (
+    <footer className="mt-16 border-t">
+      <div className="container-site grid gap-8 py-10 text-sm sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-3">
+          <Logo />
+          <p className="text-muted-foreground">{SITE_TAGLINE}</p>
+          <a
+            href="https://genlayer.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <span>Built on</span>
+            {/* The GenLayer wordmark is used as shipped; the site never recolors it. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/GenLayer_Logo_White_Cropped.svg" alt="GenLayer" height={16} className="h-4 w-auto" />
+          </a>
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase">Contract</h2>
+          {contract ? (
+            <a
+              href={addressUrl(contract)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 break-hash font-mono text-xs text-primary underline-offset-4 hover:underline"
+              title={contract}
+            >
+              {short(contract, 10, 8)}
+              <ExternalLink className="size-3 shrink-0" />
+            </a>
+          ) : (
+            <p className="text-xs text-muted-foreground">Not deployed yet. The address appears here after the owner deploys.</p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            GenLayer Studio, chain 61999.{" "}
+            <a href="https://explorer-studio.genlayer.com" target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline">
+              Explorer
+            </a>
+          </p>
+          <p className="text-xs text-gold">Studio test network. Test GEN only, no real money.</p>
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase">Links</h2>
+          <ul className="space-y-1 text-xs">
+            <li>
+              <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-4 hover:underline">
+                Source on GitHub <ExternalLink className="size-3" />
+              </a>
+            </li>
+            <li>
+              <a href="https://docs.genlayer.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-4 hover:underline">
+                GenLayer docs <ExternalLink className="size-3" />
+              </a>
+            </li>
+          </ul>
+          <p className="pt-2 text-xs text-muted-foreground">
+            made by{" "}
+            <a href={AUTHOR.x} target="_blank" rel="noopener noreferrer" className="text-foreground underline-offset-4 hover:underline">
+              {AUTHOR.name}
+            </a>
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+}

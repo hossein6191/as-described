@@ -1,69 +1,106 @@
-import Image from "next/image";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { ListChecks, Lock, ScanSearch, Eye, Users, Coins, ArrowRight } from "lucide-react";
 
-export default function Home() {
+import { LogoMark } from "@/components/brand/logo";
+import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
+import { StatsStrip } from "@/components/stats-strip";
+import { HeroCtas } from "@/components/hero-ctas";
+import { Button } from "@/components/ui/button";
+import { SITE_TAGLINE } from "@/lib/config";
+
+export const metadata: Metadata = { title: "As Described — Every promise in the listing is enforced." };
+
+const STEPS = [
+  {
+    step: "1",
+    name: "List with promises",
+    description: "The seller commits every section by hash and writes up to six plain-English promises about the pack.",
+    Icon: ListChecks,
+  },
+  {
+    step: "2",
+    name: "Buy into escrow",
+    description: "The buyer pays the price into the contract. It stays there for the dispute window the seller chose.",
+    Icon: Lock,
+  },
+  {
+    step: "3",
+    name: "Read, hashes checked",
+    description: "The buyer signs once to fetch the sections. Each one is hashed in the browser and compared with the chain.",
+    Icon: ScanSearch,
+  },
+  {
+    step: "4",
+    name: "Reveal one section",
+    description: "If a section breaks a promise, the buyer posts a bond and reveals that section on chain, text and all.",
+    Icon: Eye,
+  },
+  {
+    step: "5",
+    name: "Validators decide",
+    description: "Five independent validators read the promise and the section and agree on one word: breaks, keeps or unclear.",
+    Icon: Users,
+  },
+  {
+    step: "6",
+    name: "Money moves by the verdict",
+    description: "Breaks: price and bond go back to the buyer. Keeps: both go to the seller. Nobody can refuse the outcome.",
+    Icon: Coins,
+  },
+];
+
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="container-site space-y-16 py-10 sm:py-16">
+      <section className="flex flex-col items-center gap-6 text-center">
+        <LogoMark size={72} className="drop-shadow-[0_8px_30px_rgba(25,198,166,0.35)]" />
+        <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">{SITE_TAGLINE}</h1>
+        <p className="max-w-2xl text-base text-muted-foreground text-pretty sm:text-lg">
+          Sell a text pack with promises. Buyers pay into escrow. If a section breaks a promise, five independent
+          validators decide and the money moves by their verdict — nobody can refuse a refund, nobody can fake the
+          evidence.
+        </p>
+        <HeroCtas />
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex items-end justify-between gap-4">
+          <h2 className="text-2xl font-semibold tracking-tight">How it works</h2>
+          <span className="text-xs text-muted-foreground">six steps, two wallets</span>
+        </div>
+        <BentoGrid>
+          {STEPS.map((s) => (
+            <BentoCard key={s.step} {...s} />
+          ))}
+        </BentoGrid>
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex items-end justify-between gap-4">
+          <h2 className="text-2xl font-semibold tracking-tight">On chain right now</h2>
+          <Link href="/ledger" className="text-sm text-primary underline-offset-4 hover:underline">
+            Open the ledger
+          </Link>
+        </div>
+        <StatsStrip />
+      </section>
+
+      <section className="grid gap-6 rounded-2xl border bg-card p-6 sm:grid-cols-[1fr_auto] sm:items-center sm:p-8">
+        <div className="space-y-3">
+          <h2 className="text-2xl font-semibold tracking-tight">Try to get a refund you don&apos;t deserve</h2>
+          <p className="max-w-2xl text-muted-foreground">
+            The honest twin of the vegetarian pack keeps every promise. Buy it, dispute any section against any
+            promise, and watch the validators send your bond to the seller. Then buy the other one and dispute
+            recipe 5.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        <Button asChild variant="cool" size="lg">
+          <Link href="/pack/L2">
+            Open the honest pack <ArrowRight />
+          </Link>
+        </Button>
+      </section>
     </div>
   );
 }

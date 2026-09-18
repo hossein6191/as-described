@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "find .next -name '._*' -delete 2>/dev/null; next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "dev:mock": "NEXT_PUBLIC_MOCK=1 next dev -p 3117",
+    "test:contract": "pytest tests/ -q"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
