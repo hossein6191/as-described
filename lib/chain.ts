@@ -120,6 +120,8 @@ export const contractAddress = (): string =>
   process.env.NEXT_PUBLIC_CONTRACT || DEMO_CONTRACT || "";
 
 export const NETWORK_ERROR = "could not reach the network";
+/** Thrown by reads when the site has no register address yet (before the owner deploys). */
+export const NO_REGISTER = "no register is configured yet";
 
 // The SDK's studionet object carries a dead explorer URL; the RPC and explorer hosts are set here.
 const studio = {
@@ -137,6 +139,8 @@ const reader = () => createClient({ chain: studio });
 export type Snapshot = {
   takenAt?: string;
   contract?: string;
+  /** the register this snapshot was read from; the fallback is used only for that register */
+  register?: string;
   listingIds?: string[];
   listings?: Record<string, Listing> | Listing[];
   orders?: Record<string, Order> | Order[];
@@ -211,7 +215,7 @@ function parseView(raw: unknown): unknown {
 /** One view call with retries. Throws the plain network error when it never answered. */
 async function view(fn: string, args: (string | number)[] = []): Promise<unknown> {
   const address = contractAddress();
-  if (!address) throw new Error(NETWORK_ERROR);
+  if (!address) throw new Error(NO_REGISTER);
   try {
     const raw = await withRetry(() =>
       reader().readContract({ address: address as Address, functionName: fn, args }),
@@ -349,8 +353,11 @@ async function withSnapshot<T>(
   try {
     return { data: await live(), source: "chain" };
   } catch (e) {
+    if (e instanceof Error && e.message === NO_REGISTER) throw e;
     const s = await loadSnapshot();
-    const item = s ? fromSnapshot(s) : null;
+    // A snapshot only ever stands in for the register it was taken from.
+    const same = !!s?.register && s.register.toLowerCase() === contractAddress().toLowerCase();
+    const item = s && same ? fromSnapshot(s) : null;
     if (item !== null && item !== undefined) return { data: item, source: "snapshot" };
     throw e instanceof Error && e.message === NETWORK_ERROR ? e : new Error(NETWORK_ERROR);
   }

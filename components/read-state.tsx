@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { NO_REGISTER } from "@/lib/chain";
 import { RefreshCw, WifiOff, Camera } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -47,11 +48,23 @@ export function ReadError({
       <div className="flex items-start gap-2">
         <WifiOff className="mt-0.5 size-4 shrink-0 text-breaks" />
         <div>
-          <p className="font-medium">Could not reach the network.</p>
-          <p className="text-muted-foreground">
-            Studio did not answer in time. Nothing is wrong with your order or your wallet.
-            {detail ? <span className="block break-hash font-mono text-[11px] opacity-80">{detail}</span> : null}
-          </p>
+          {detail === NO_REGISTER ? (
+            <>
+              <p className="font-medium">No register yet.</p>
+              <p className="text-muted-foreground">
+                This site has not been pointed at a deployed contract yet.{" "}
+                <a href="/deploy" className="text-primary underline-offset-4 hover:underline">Deploy one</a> from your wallet.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-medium">Could not reach the network.</p>
+              <p className="text-muted-foreground">
+                Studio did not answer in time. Nothing is wrong with your order or your wallet.
+                {detail ? <span className="block break-hash font-mono text-[11px] opacity-80">{detail}</span> : null}
+              </p>
+            </>
+          )}
         </div>
       </div>
       <Button type="button" variant="outline" size="sm" onClick={onRetry} className="shrink-0">
