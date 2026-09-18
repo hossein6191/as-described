@@ -41,3 +41,42 @@ PASS  pack 2 is listed  — L3
 PASS  buy pack 2  — O2
       open_dispute  0x87253a43cbacfca2435d7fe5a8944c0d690150a147c92e7328c8070d490da56b  3 agree, 0 disagree, 2 idle  SUCCESS
 PASS  the buyer disputes recipe 3 against the 30-minute promise  — 3 agree, 0 disagree, 2 idle
+      judge  0x1ade5d6b9d8caacfcd72f2dc74aff4382e8499e947efd8120e7aed97b85f1ff8  3 agree, 1 disagree, 1 idle  SUCCESS
+PASS  the validators judge recipe 3 and agree  — 3 agree, 1 disagree, 1 idle → keeps (break: no, keep: yes)
+PASS  a 15-minute recipe keeps the 30-minute promise
+PASS  and the seller received the price plus the bond  — +120 / 100 GEN
+
+6 passed, 0 failed
+contract: 0xA1abE645e6454E7A7128005877923f1A9DC51652
+PHASE B EXIT 0
+As Described at 0xA1abE645e6454E7A7128005877923f1A9DC51652 · phase C 
+seller 0x29588E0446DD9a03Efac1DdEB46eb0008815F5C4 · buyer 0x2A5D7bb2F2B39BCd56617D9864860CA97FAcf2F8 · stranger 0x195bEB1905D0efE2a919e79F02607B8bc249B2ef 
+
+      list_pack  0x4c4a249be44de9019c11506364da3f2083163f980404dfdfb5a5bac51fe5833f  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  pack 3 is listed with a 300 s window  — L4
+      buy  0x0c8f78172becb27f3c4afe7d1d2b1b9cb7423941df0d7bb6fbaa434988caf3c4  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  buy pack 3  — O3 · deadline 2026-09-18T13:41:44Z
+      release  0x0f3db720708f019d03dec825fb8d0a55d4b055bcc0c5aade2a7a569972b9d03f  3 agree, 0 disagree, 2 idle  ERROR
+PASS  release before the deadline is refused  — [EXPECTED] the dispute window is open until 2026-09-18T13:41:44Z
+      buy  0x06fd5353bf54fa5a0ddeb8d534d6c3d0ef1c7e4eb09612bfc1d8124d36dcb98f  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  a second order on pack 3  — O4
+      report_missing  0x8c8c166b1bd7b2f3e25298908b3fc6bf9cf727a95dcb58a3552f5945210ef1e9  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a stranger cannot report a section missing
+      report_missing  0x826034f03648dc17209c393d019f2d51d84cc77d0aa2d2cb68a3fa375009243c  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer reports template 2 missing
+      reveal  0xa26e3b35f5256d00323eac5d75fbe3c7a24b55def60e6865586189baf65f465d  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a reveal that does not hash to the commitment is refused
+      reveal  0x3bc23b096cd1cc129d89e5663d3be8fc0384c521f3a5fc741183dcd89a3a2e1c  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the seller reveals template 2 and the order is paid again  — deadline now 2026-09-19T13:40:28Z
+PASS  order view: paid, the revealed text is on chain, the deadline moved out by a day
+      waiting 54 s for the window to close
+      release  0xaf553da035f1626e21efce6b8217f6fef0948dbc9f35bb4aa74a79aa23299883  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  release after the deadline pays the seller  — 3 agree, 0 disagree, 2 idle
+PASS  and the seller received 0.5 GEN
+PASS  stats reads the counters  — {"listings":4,"orders":4,"kept":1,"broken":1,"unclear":0,"refunded":0,"released":1,"stale":0}
+PASS  ledger reads the last orders newest first  — O4:paid O3:released O2:settled O1:settled
+PASS  the rules are published by the contract
+
+14 passed, 0 failed
+contract: 0xA1abE645e6454E7A7128005877923f1A9DC51652
+PHASE C EXIT 0
