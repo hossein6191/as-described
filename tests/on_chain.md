@@ -100,7 +100,7 @@ signed transaction; balances were read from `eth_getBalance` after finalization.
 | C | the rules are published by the contract | view | — |  |
 
 What the run establishes beyond run 1:
-- **`breaks` verdict** (phase A, judge `0xc0…` — see the log): 3 agree / 0 disagree; the buyer received the price plus the bond (+1.2 GEN) after finalization; the verdict is final (a second judge on the same order is refused).
+- **`breaks` verdict** (phase A, judge `0xab47dff8…`): 3 agree / 0 disagree; the buyer received the price plus the bond (+1.2 GEN) after finalization; the verdict is final (a second judge on the same order is refused).
 - **`keeps` verdict** (phase B): 3 agree / **1 disagree** / 1 idle — the majority stored `keeps` (break: no, keep: yes) and the seller received the price plus the bond. One validator disagreed on an honest 15-minute recipe against a 30-minute promise; a split of this size is what the two-framing rule is there to absorb, and it is reported as measured, not hidden.
 - **Refunds are real**: a wrong-value `buy` and a stranger's `open_dispute` were refused with `ok:false` and the value came back (gas only).
 - **`release`** is refused while the window is open and pays the seller after it (0.5 GEN received).
