@@ -1,3 +1,17 @@
 As Described at 0xA1abE645e6454E7A7128005877923f1A9DC51652 · phase A 
 seller 0x6D1b5434f3eCDb8df32b3Dd7587811A54BF4db23 · buyer 0xA2ae0241A2155248536fCB0DCB257b114A85BB71 · stranger 0xd26D97c2Ebdb2212543342843185f37beB75AD00 
 
+      list_pack  0x1ed0f72ed81a5208c5c4b77142571e3d957eef2a7ca6cc83ab5055940d4ac1a6  4 agree, 0 disagree, 1 idle  ERROR
+PASS  a two-letter title is refused  — [EXPECTED] a title is 3 to 60 characters
+      list_pack  0x3c483019cf18cfcd191259c1e267f8b9dd96d45d5d69b3138ebb46a3435fb8d1  3 agree, 0 disagree, 2 idle  ERROR
+PASS  a hash that is not 64 lowercase hex is refused  — [EXPECTED] each hash is the sha256 of one section: 64 lowercase hex ch
+      list_pack  0xff1d24a08b71e0a419bbfb801739588a2fab36f961cb948bfff05ce840388cbf  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a price below 0.1 GEN is refused  — [EXPECTED] the price is a whole number of atto between 100000000000000
+      list_pack  0x0fd565c38f09765fd7712ef171251fd126fba5b6e21320525920b2e0ea9a56a6  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  pack 1 is listed with a contract-assigned id  — L2 · 3 agree, 0 disagree, 2 idle
+      buy  0x0deea6dfffa444c3068137ff8859919dd24df6381bf15f8ed08cb5b2e4d08f6d  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  buy with the wrong value is refused, and the record says so  — send exactly the price: 1000000000000000000 atto; your funds were retu
+PASS  the refund is real: the buyer's balance is back where it was
+      buy  0x174545780ae86a6b9d5d74e644d2ad3d1cd3f183cdd05b7e3c0130decfee75c6  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  buy pack 1 for 1 GEN opens an order  — O1 · deadline 2026-09-21T13:28:55Z
+PASS  bond_for reads the bond with no model  — 200000000000000000
