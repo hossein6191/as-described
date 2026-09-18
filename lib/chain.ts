@@ -119,7 +119,7 @@ export async function readListing(
   return { data: null, source: "chain" };
 }
 export async function readOrder(id: string): Promise<ReadResult<Order | null>> {
-  if (isMock) return mock.readListing(id);
+  if (isMock) return mock.readOrder(id);
   return { data: null, source: "chain" };
 }
 export async function readOrdersOf(listing: string): Promise<ReadResult<string[]>> {
