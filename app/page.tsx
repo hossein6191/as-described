@@ -6,6 +6,7 @@ import { LogoMark } from "@/components/brand/logo";
 import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
 import { StatsStrip } from "@/components/stats-strip";
 import { HeroCtas } from "@/components/hero-ctas";
+import { StartHere } from "@/components/start-here";
 import { Button } from "@/components/ui/button";
 import { SITE_TAGLINE } from "@/lib/config";
 
@@ -63,6 +64,8 @@ export default function HomePage() {
         </p>
         <HeroCtas />
       </section>
+
+      <StartHere />
 
       <section className="space-y-6">
         <div className="flex items-end justify-between gap-4">

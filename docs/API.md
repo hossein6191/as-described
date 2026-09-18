@@ -155,3 +155,11 @@ What it can do, and the model-free remedy:
 Nothing in the delivery API is authoritative for the contract: who is seller, who is
 buyer, what was committed, and whether a section broke a promise are all read from, or
 decided on, the chain.
+
+## The `register` parameter (added 19 Sep 2026)
+
+Every request names the register it is about: `register` in the JSON body of `upload` and
+`pack`, `?register=` on `status`. The browser sends the address it reads (`lib/register.ts`: the
+visitor's own choice from `/deploy`, else the site default). The routes check the chain on that
+register and key the stored pack by `(register, listing)`, so a pack uploaded for `L3` on one
+register is never served for `L3` on another. Without the parameter the site default applies.

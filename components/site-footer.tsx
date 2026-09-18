@@ -2,12 +2,10 @@ import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
-import { addressUrl, contractAddress } from "@/lib/chain";
-import { AUTHOR, DEMO_CONTRACT, REPO_URL, SITE_TAGLINE } from "@/lib/config";
-import { short } from "@/lib/format";
+import { RegisterLine } from "@/components/register-line";
+import { AUTHOR, REPO_URL, SITE_TAGLINE } from "@/lib/config";
 
 export function SiteFooter() {
-  const contract = contractAddress() || DEMO_CONTRACT;
   return (
     <footer className="mt-16 border-t">
       <div className="container-site grid gap-8 py-10 text-sm sm:grid-cols-2 lg:grid-cols-3">
@@ -29,20 +27,7 @@ export function SiteFooter() {
 
         <div className="space-y-2">
           <h2 className="text-xs font-semibold text-muted-foreground uppercase">Contract</h2>
-          {contract ? (
-            <a
-              href={addressUrl(contract)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 break-hash font-mono text-xs text-primary underline-offset-4 hover:underline"
-              title={contract}
-            >
-              {short(contract, 10, 8)}
-              <ExternalLink className="size-3 shrink-0" />
-            </a>
-          ) : (
-            <p className="text-xs text-muted-foreground">Not deployed yet. The address appears here after the owner deploys.</p>
-          )}
+          <RegisterLine />
           <p className="text-xs text-muted-foreground">
             GenLayer Studio, chain 61999.{" "}
             <a href="https://explorer-studio.genlayer.com" target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline">

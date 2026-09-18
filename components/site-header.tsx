@@ -13,6 +13,7 @@ const NAV = [
   { href: "/sell", label: "Sell" },
   { href: "/ledger", label: "Ledger" },
   { href: "/orders", label: "My orders" },
+  { href: "/deploy", label: "Deploy" },
 ] as const;
 
 export function NetworkBadge({ className }: { className?: string }) {

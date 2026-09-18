@@ -10,6 +10,7 @@ import { verifyMessage } from "viem";
 import { manifestOf, uploadMessage } from "@/lib/api";
 import { isMock, readListing, NETWORK_ERROR } from "@/lib/chain";
 import { isListingId, savePack } from "@/lib/store";
+import { chainRegister, registerOf } from "@/lib/register-param";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   if (!isListingId(id)) return reply(400, { ok: false, reason: "bad listing id" });
 
-  let body: { sections?: unknown; address?: unknown; signature?: unknown };
+  let body: { sections?: unknown; address?: unknown; signature?: unknown; register?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -45,11 +46,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return reply(400, { ok: false, reason: `every section must be text of 1 to ${MAX_SECTION_CHARS} characters` });
   }
   const texts = sections as string[];
+  const register = registerOf(body.register);
+  if (!register) return reply(503, { ok: false, reason: "this site is not pointed at a register yet" });
 
   // The chain is the authority on who the seller is and what was committed.
   let listing;
   try {
-    listing = (await readListing(id)).data;
+    listing = (await readListing(id, chainRegister(register))).data;
   } catch (e) {
     const reason = e instanceof Error && e.message === NETWORK_ERROR ? NETWORK_ERROR : "could not read the listing";
     return reply(503, { ok: false, reason });
@@ -85,6 +88,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   try {
     await savePack({
+      register,
       listing: id,
       seller: address,
       hashes,

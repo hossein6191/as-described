@@ -6,6 +6,7 @@ import { PenLine } from "lucide-react";
 
 import ProductCard from "@/components/ui/product-card";
 import { Button } from "@/components/ui/button";
+import { StartHere } from "@/components/start-here";
 import { CardGridSkeleton, ReadBlock } from "@/components/read-state";
 import { useRead } from "@/components/use-read";
 import { isMock, readListing, readListingIds, type Listing } from "@/lib/chain";
@@ -55,6 +56,8 @@ export default function ShopPage() {
           </Link>
         </Button>
       </div>
+
+      <StartHere compact />
 
       <ReadBlock
         state={state}

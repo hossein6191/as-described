@@ -1,20 +1,34 @@
 "use client";
 
-// Deploy your own As Described register from your wallet. The page fetches the contract source
-// the site ships (public/contracts/as_described.py, byte-identical to contracts/as_described.py),
-// shows its sha256 so anybody can diff it against the repository, and signs one deploy transaction.
+// Deploy your own As Described register from your wallet, or point this browser at one.
+// The page fetches the contract source the site ships (public/contracts/as_described.py,
+// byte-identical to contracts/as_described.py), shows its sha256 so anybody can diff it against
+// the repository, and signs one deploy transaction. The address it produces is remembered in this
+// browser and used by every page at once; the site owner bakes theirs into lib/config.ts.
 
 import * as React from "react";
 import Link from "next/link";
-import { Rocket, ExternalLink, Copy, Check } from "lucide-react";
+import { Rocket, ExternalLink, Copy, Check, ShoppingBag, PenLine, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { TxRail } from "@/components/tx-rail";
 import { useWallet } from "@/components/wallet";
 import { sha256Hex } from "@/lib/api";
 import { addressUrl, contractAddress, deploy, deployedAddress, type TxStatus } from "@/lib/chain";
 import { REPO_URL } from "@/lib/config";
+import {
+  isAddress,
+  lastDeployRaw,
+  parseLastDeploy,
+  registerOverride,
+  rememberDeploy,
+  setRegisterOverride,
+  siteRegister,
+} from "@/lib/register";
+import { useLocal } from "@/components/use-local";
+import { short } from "@/lib/format";
 
 const SOURCE_PATH = "/contracts/as_described.py";
 
@@ -23,12 +37,19 @@ export default function DeployPage() {
   const [code, setCode] = React.useState<string>("");
   const [digest, setDigest] = React.useState<string>("");
   const [loadError, setLoadError] = React.useState<string>("");
-  const [address, setAddress] = React.useState<string>("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [copied, setCopied] = React.useState(false);
   // The deploy hash lives in local state; TxRail polls it like any other transaction.
   const [hash, setHash] = React.useState<string | null>(null);
+  const [waitingAddress, setWaitingAddress] = React.useState(false);
+  const [manual, setManual] = React.useState("");
+  const [manualError, setManualError] = React.useState("");
+  // What this browser reads right now, and where that came from (re-rendered on every change).
+  const inUse = useLocal(() => contractAddress(), siteRegister());
+  const override = useLocal(registerOverride, "");
+  const lastRaw = useLocal(lastDeployRaw, "");
+  const last = React.useMemo(() => parseLastDeploy(lastRaw), [lastRaw]);
 
   React.useEffect(() => {
     let alive = true;
@@ -49,21 +70,32 @@ export default function DeployPage() {
     };
   }, []);
 
+  const chooseRegister = (address: string) => setRegisterOverride(address);
+
   const onDone = React.useCallback(
     async (s: TxStatus) => {
       if (!hash || s.status === "CANCELED" || s.applied === false) return;
-      // The address is on the transaction once the network accepted it.
-      for (let i = 0; i < 20; i++) {
-        try {
-          const a = await deployedAddress(hash);
-          if (a) {
-            setAddress(a);
-            return;
+      setWaitingAddress(true);
+      try {
+        // The address is on the transaction once the network accepted it.
+        for (let i = 0; i < 20; i++) {
+          try {
+            const a = await deployedAddress(hash);
+            if (a) {
+              const d = { address: a, hash, at: new Date().toISOString() };
+              rememberDeploy(d);
+              // This browser reads the new register from now on.
+              setRegisterOverride(a);
+              return;
+            }
+          } catch {
+            /* try again */
           }
-        } catch {
-          /* try again */
+          await new Promise((r) => setTimeout(r, 3000));
         }
-        await new Promise((r) => setTimeout(r, 3000));
+        setError("The deploy finished but its address could not be read yet. Reload this page in a minute; the transaction link above has it.");
+      } finally {
+        setWaitingAddress(false);
       }
     },
     [hash],
@@ -71,7 +103,6 @@ export default function DeployPage() {
 
   const start = async () => {
     setError("");
-    setAddress("");
     setBusy(true);
     try {
       setHash(null);
@@ -84,9 +115,9 @@ export default function DeployPage() {
     }
   };
 
-  const copy = async () => {
+  const copy = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(address);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -94,18 +125,73 @@ export default function DeployPage() {
     }
   };
 
-  const configured = contractAddress();
+  const applyManual = () => {
+    const a = manual.trim();
+    if (!isAddress(a)) {
+      setManualError("That is not a 0x address of 40 hex characters.");
+      return;
+    }
+    setManualError("");
+    chooseRegister(a);
+    setManual("");
+  };
+
+  const site = siteRegister();
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-10">
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Deploy a register</h1>
         <p className="text-muted-foreground">
-          The site ships the contract source it was deployed from. Deploying it from your own wallet gives you a
-          register of your own on GenLayer Studio; the address is yours, and the code is the file below, byte for
-          byte.
+          A register is the contract every pack, order and verdict lives on. This site ships one; you can deploy your
+          own from your wallet with one signature, and this browser will use it from then on. The code is the file
+          below, byte for byte.
         </p>
       </div>
+
+      <Card className="space-y-3 p-6">
+        <h2 className="text-lg font-semibold">The register this browser uses</h2>
+        {inUse ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="break-all rounded bg-background px-2 py-1 font-mono text-xs">{inUse}</code>
+            <Button variant="outline" size="sm" onClick={() => void copy(inUse)}>
+              {copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy"}
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <a href={addressUrl(inUse)} target="_blank" rel="noreferrer">
+                <ExternalLink /> Explorer
+              </a>
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">None yet. Deploy one below, or paste an address.</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {override
+            ? "Your own choice, made on this page. Every page of the site reads it in this browser."
+            : inUse
+              ? "The site's default register."
+              : ""}
+        </p>
+        {override && site && override.toLowerCase() !== site.toLowerCase() ? (
+          <Button variant="outline" size="sm" onClick={() => chooseRegister("")}>
+            <Undo2 /> Back to the site&apos;s default ({short(site, 6, 4)})
+          </Button>
+        ) : null}
+        <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+          <Input
+            value={manual}
+            onChange={(e) => setManual(e.target.value)}
+            placeholder="Paste another register address (0x…)"
+            className="font-mono text-xs"
+            aria-label="Register address"
+          />
+          <Button variant="outline" onClick={applyManual} disabled={!manual.trim()}>
+            Use this register
+          </Button>
+        </div>
+        {manualError ? <p className="text-xs text-destructive">{manualError}</p> : null}
+      </Card>
 
       <Card className="space-y-4 p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -135,50 +221,72 @@ export default function DeployPage() {
       </Card>
 
       <Card className="space-y-4 p-6">
-        <h2 className="text-lg font-semibold">Sign the deployment</h2>
+        <h2 className="text-lg font-semibold">Deploy your own</h2>
+        <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>Connect a wallet (top right). The site switches it to GenLayer Studio, chain 61999.</li>
+          <li>Have some test GEN: the wallet menu has a &quot;Get 10 test GEN&quot; button.</li>
+          <li>Press the button below and confirm in your wallet. The network takes about a minute.</li>
+          <li>This browser then reads your register. Next stop: <Link href="/sell" className="text-primary underline-offset-4 hover:underline">sell a pack</Link>.</li>
+        </ol>
         {!wallet.address ? (
-          <p className="text-sm text-muted-foreground">Connect a wallet (top right) on GenLayer Studio, chain 61999, then deploy.</p>
+          <p className="text-sm text-muted-foreground">No wallet connected yet.</p>
         ) : !wallet.onStudio ? (
-          <p className="text-sm text-destructive">Your wallet is not on GenLayer Studio. Switch it first.</p>
+          <p className="text-sm text-destructive">Your wallet is not on GenLayer Studio. Use the wallet menu to switch.</p>
         ) : null}
-        <Button variant="cool" size="lg" disabled={!code || busy || !wallet.address || !wallet.onStudio} onClick={start}>
-          <Rocket /> Deploy from my wallet
+        <Button variant="cool" size="lg" disabled={!code || busy || !wallet.address || !wallet.onStudio || !!hash} onClick={start}>
+          <Rocket /> {busy ? "Waiting for your wallet…" : "Deploy from my wallet"}
         </Button>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {hash ? <TxRail hash={hash} label="Deploying the register" onDone={onDone} /> : null}
-        {address ? (
+        {waitingAddress ? <p className="text-sm text-muted-foreground">Reading the new address from the network…</p> : null}
+        {last ? (
           <div className="space-y-3 rounded-xl border border-primary/40 bg-primary/5 p-4">
-            <p className="text-sm font-medium">Deployed. Your register lives at</p>
+            <p className="text-sm font-medium">
+              {last.hash === hash ? "Deployed." : "Your last deployment from this browser."} The register lives at
+            </p>
             <div className="flex flex-wrap items-center gap-2">
-              <code className="break-all rounded bg-background px-2 py-1 font-mono text-xs">{address}</code>
-              <Button variant="outline" size="sm" onClick={copy}>
+              <code className="break-all rounded bg-background px-2 py-1 font-mono text-xs">{last.address}</code>
+              <Button variant="outline" size="sm" onClick={() => void copy(last.address)}>
                 {copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy"}
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <a href={addressUrl(address)} target="_blank" rel="noreferrer">
+                <a href={addressUrl(last.address)} target="_blank" rel="noreferrer">
                   <ExternalLink /> Explorer
                 </a>
               </Button>
+              {inUse.toLowerCase() !== last.address.toLowerCase() ? (
+                <Button variant="outline" size="sm" onClick={() => chooseRegister(last.address)}>
+                  Use it in this browser
+                </Button>
+              ) : (
+                <span className="text-xs text-keeps">In use in this browser</span>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              To point this site at it, set <code className="font-mono text-xs">NEXT_PUBLIC_CONTRACT</code> to this address
-              (or <code className="font-mono text-xs">DEMO_CONTRACT</code> in <code className="font-mono text-xs">lib/config.ts</code>) and redeploy the site.
+            <p className="text-xs text-muted-foreground">
+              Deployed {new Date(last.at).toLocaleString()} · tx{" "}
+              <a className="font-mono text-primary underline-offset-4 hover:underline" href={`https://explorer-studio.genlayer.com/tx/${last.hash}`} target="_blank" rel="noreferrer">
+                {short(last.hash, 10, 6)}
+              </a>
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button variant="cool" size="sm" asChild>
+                <Link href="/sell">
+                  <PenLine /> Sell a pack on it
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/shop">
+                  <ShoppingBag /> Open the shop
+                </Link>
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Site owner: to make this the default for everybody, set <code className="font-mono">NEXT_PUBLIC_CONTRACT</code> (or{" "}
+              <code className="font-mono">DEMO_CONTRACT</code> in <code className="font-mono">lib/config.ts</code>) to this address and redeploy the site.
             </p>
           </div>
         ) : null}
       </Card>
-
-      <p className="text-sm text-muted-foreground">
-        This site currently reads{" "}
-        {configured ? (
-          <a className="font-mono text-xs text-primary underline-offset-4 hover:underline" href={addressUrl(configured)} target="_blank" rel="noreferrer">
-            {configured}
-          </a>
-        ) : (
-          <span>no register yet</span>
-        )}
-        . Back to the <Link className="text-primary underline-offset-4 hover:underline" href="/shop">shop</Link>.
-      </p>
     </div>
   );
 }

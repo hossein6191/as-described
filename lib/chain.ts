@@ -111,13 +111,13 @@ import * as mock from "./chain-mock";
 import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 import type { Address } from "viem";
-import { DEMO_CONTRACT } from "./config";
+import { registerOverride, siteRegister } from "./register";
 import { decodeTx, rpc, sleep, withRetry, type RawTx } from "./rpc";
 import { getChainId, getSigner, chainName } from "./wallet";
 
 export const isMock = process.env.NEXT_PUBLIC_MOCK === "1";
-export const contractAddress = (): string =>
-  process.env.NEXT_PUBLIC_CONTRACT || DEMO_CONTRACT || "";
+/** The register in use: this browser's choice from /deploy first, then the site's default. */
+export const contractAddress = (): string => registerOverride() || siteRegister();
 
 export const NETWORK_ERROR = "could not reach the network";
 /** Thrown by reads when the site has no register address yet (before the owner deploys). */
@@ -213,8 +213,8 @@ function parseView(raw: unknown): unknown {
 }
 
 /** One view call with retries. Throws the plain network error when it never answered. */
-async function view(fn: string, args: (string | number)[] = []): Promise<unknown> {
-  const address = contractAddress();
+async function view(fn: string, args: (string | number)[] = [], register?: string): Promise<unknown> {
+  const address = register || contractAddress();
   if (!address) throw new Error(NO_REGISTER);
   try {
     const raw = await withRetry(() =>
@@ -371,23 +371,25 @@ export async function readListingIds(): Promise<ReadResult<string[]>> {
     (s) => s.listingIds ?? (s.listings ? values(s.listings).map((l) => l.id) : null),
   );
 }
+/** `register` names another register than the one in use (the delivery API passes the caller's). */
 export async function readListing(
   id: string,
+  register?: string,
 ): Promise<ReadResult<Listing | null>> {
   if (isMock) return mock.readListing(id);
   return withSnapshot(
     async () => {
-      const v = await view("listing", [id]);
+      const v = await view("listing", [id], register);
       return isEmptyRow(v) ? null : mapListing(v as Row, id);
     },
     (s) => byId(s.listings, id),
   );
 }
-export async function readOrder(id: string): Promise<ReadResult<Order | null>> {
+export async function readOrder(id: string, register?: string): Promise<ReadResult<Order | null>> {
   if (isMock) return mock.readOrder(id);
   const r = await withSnapshot(
     async () => {
-      const v = await view("order", [id]);
+      const v = await view("order", [id], register);
       return isEmptyRow(v) ? null : mapOrder(v as Row, id);
     },
     (s) => byId(s.orders, id),
@@ -395,7 +397,7 @@ export async function readOrder(id: string): Promise<ReadResult<Order | null>> {
   // The order row carries no title of its own; borrow it from the listing when missing.
   if (r.data && !r.data.title && r.data.listing) {
     try {
-      const l = await readListing(r.data.listing);
+      const l = await readListing(r.data.listing, register);
       if (l.data) r.data.title = l.data.title;
     } catch {
       /* the order is still readable without a title */
@@ -499,7 +501,7 @@ export async function write(
 ): Promise<string> {
   if (isMock) return mock.write(fn, args, valueAtto);
   const address = contractAddress();
-  if (!address) throw new Error("No contract address is configured (NEXT_PUBLIC_CONTRACT).");
+  if (!address) throw new Error("This site is not pointed at a register yet. Deploy one from the Deploy page, or wait for the site owner.");
   const signer = getSigner();
   if (!signer) throw new Error("Connect a wallet first.");
   // Studio is gasless and genlayer-js skips its own chain check for it, so the refusal to

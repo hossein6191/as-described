@@ -6,6 +6,8 @@
 // check the chain: the upload signer must be the listing's seller and every section must hash
 // to what the seller committed; the read signer must be the order's buyer.
 
+import { contractAddress } from "./chain";
+
 export type PackStatus = { uploaded: boolean };
 
 type ApiReply = { ok: boolean; reason?: string; sections?: string[]; uploaded?: boolean };
@@ -28,7 +30,7 @@ async function call(path: string, init?: RequestInit): Promise<ApiReply> {
 }
 
 export async function packStatus(listingId: string): Promise<PackStatus> {
-  const r = await call(`/api/packs/${encodeURIComponent(listingId)}/status`);
+  const r = await call(`/api/packs/${encodeURIComponent(listingId)}/status?register=${encodeURIComponent(contractAddress())}`);
   return { uploaded: r.ok && r.uploaded === true };
 }
 
@@ -42,7 +44,7 @@ export async function uploadPack(
   const r = await call(`/api/packs/${encodeURIComponent(listingId)}/upload`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sections, address, signature }),
+    body: JSON.stringify({ sections, address, signature, register: contractAddress() }),
   });
   return { ok: r.ok, reason: r.reason };
 }
@@ -57,7 +59,7 @@ export async function fetchPack(
   const r = await call(`/api/packs/${encodeURIComponent(listingId)}/pack`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ order: orderId, address, signature }),
+    body: JSON.stringify({ order: orderId, address, signature, register: contractAddress() }),
   });
   return { ok: r.ok, sections: r.sections, reason: r.reason };
 }

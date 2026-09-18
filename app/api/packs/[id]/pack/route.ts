@@ -10,6 +10,7 @@ import { readMessage } from "@/lib/api";
 import { isMock, readListing, readOrder, NETWORK_ERROR } from "@/lib/chain";
 import { demoSectionsFor } from "@/lib/demo-store";
 import { isListingId, isOrderId, loadPack } from "@/lib/store";
+import { chainRegister, registerOf } from "@/lib/register-param";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   if (!isListingId(id)) return reply(400, { ok: false, reason: "bad listing id" });
 
-  let body: { order?: unknown; address?: unknown; signature?: unknown };
+  let body: { order?: unknown; address?: unknown; signature?: unknown; register?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -48,9 +49,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!valid) return reply(401, { ok: false, reason: "the signature does not match the read message for this order" });
   }
 
+  const register = registerOf(body.register);
+  if (!register) return reply(503, { ok: false, reason: "this site is not pointed at a register yet" });
+
   let order;
   try {
-    order = (await readOrder(orderId)).data;
+    order = (await readOrder(orderId, chainRegister(register))).data;
   } catch (e) {
     const reason = e instanceof Error && e.message === NETWORK_ERROR ? NETWORK_ERROR : "could not read the order";
     return reply(503, { ok: false, reason });
@@ -61,7 +65,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   let pack;
   try {
-    pack = await loadPack(id);
+    pack = await loadPack(register, id);
   } catch {
     return reply(500, { ok: false, reason: "the stored pack could not be opened" });
   }
@@ -71,7 +75,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // No stored body: a listing that committed exactly a demo pack's hashes is served from the repository.
   let listing = null;
   try {
-    listing = (await readListing(id)).data;
+    listing = (await readListing(id, chainRegister(register))).data;
   } catch {
     listing = null;
   }
