@@ -754,3 +754,11 @@ class TestStaticRules:
             for stmt in node.body:
                 if isinstance(stmt, ast.AnnAssign):
                     assert ast.unparse(stmt.annotation) in {"Address", "str", "u256", "u32", "u64", "bool"}, ast.unparse(stmt)
+
+
+def test_the_site_serves_the_same_contract_bytes_it_deploys():
+    """/deploy fetches public/contracts/as_described.py; it must be the repository file, byte for byte,
+    so the address the site deploys always matches the source a reviewer diffs (checklist item 3)."""
+    served = (ROOT / "public" / "contracts" / "as_described.py").read_bytes()
+    source = (ROOT / "contracts" / "as_described.py").read_bytes()
+    assert served == source

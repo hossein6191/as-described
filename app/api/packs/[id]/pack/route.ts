@@ -7,7 +7,8 @@
 
 import { verifyMessage } from "viem";
 import { readMessage } from "@/lib/api";
-import { isMock, readOrder, NETWORK_ERROR } from "@/lib/chain";
+import { isMock, readListing, readOrder, NETWORK_ERROR } from "@/lib/chain";
+import { demoSectionsFor } from "@/lib/demo-store";
 import { isListingId, isOrderId, loadPack } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -64,6 +65,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   } catch {
     return reply(500, { ok: false, reason: "the stored pack could not be opened" });
   }
-  if (!pack) return reply(404, { ok: false, reason: "the seller has not uploaded this pack yet" });
-  return reply(200, { ok: true, order: orderId, listing: id, sections: pack.sections, uploadedAt: pack.uploadedAt });
+  if (pack) {
+    return reply(200, { ok: true, order: orderId, listing: id, sections: pack.sections, uploadedAt: pack.uploadedAt });
+  }
+  // No stored body: a listing that committed exactly a demo pack's hashes is served from the repository.
+  let listing = null;
+  try {
+    listing = (await readListing(id)).data;
+  } catch {
+    listing = null;
+  }
+  const demo = listing ? demoSectionsFor(listing.hashes) : null;
+  if (demo) return reply(200, { ok: true, order: orderId, listing: id, sections: demo, uploadedAt: "", source: "demo" });
+  return reply(404, { ok: false, reason: "the seller has not uploaded this pack yet" });
 }

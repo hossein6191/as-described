@@ -15,3 +15,23 @@ PASS  the refund is real: the buyer's balance is back where it was
       buy  0x174545780ae86a6b9d5d74e644d2ad3d1cd3f183cdd05b7e3c0130decfee75c6  5 agree, 0 disagree, 0 idle  SUCCESS
 PASS  buy pack 1 for 1 GEN opens an order  — O1 · deadline 2026-09-21T13:28:55Z
 PASS  bond_for reads the bond with no model  — 200000000000000000
+      open_dispute  0x4d936b3179806a4fc25cb1f64acdf4e96624b210cf7f457e2eece98ec7e8440d  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  a stranger cannot dispute, and the bond comes back  — only the buyer of this order may dispute it; your funds were
+      open_dispute  0x623687c5befd376111cee859615424fb3d1c460237328f836c886a8ac880efe5  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer disputes recipe 5 against promise 1 with the bond  — 3 agree, 0 disagree, 2 idle
+      judge  0xe39d6636ad96af1f031882aedf8d05bb9733c0ba07088537b4fd46113bf897e0  3 agree, 0 disagree, 2 idle  ERROR
+PASS  judge with a text that does not hash to the commitment is refused  — [EXPECTED] the text does not match the hash the seller committed for section 5
+      judge  0xab47dff8884a891ef7f2267a4f2bb92c12de441d8e87d5041e35b20e3ddf9088  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the validators judge recipe 5 and agree  — 3 agree, 0 disagree, 2 idle → breaks (break: yes, keep: no)
+PASS  bacon breaks the vegetarian promise
+PASS  and the buyer received the price plus the bond  — +120 / 100 GEN
+PASS  order view: settled, verdict breaks, paid_buyer 1.2 GEN
+      judge  0x29853f3522747a22d97b1ca77bdc3b58e9a53a50ef22c7a76db8a038a0890311  3 agree, 0 disagree, 2 idle  ERROR
+PASS  a verdict is final
+
+16 passed, 0 failed
+contract: 0xA1abE645e6454E7A7128005877923f1A9DC51652
+PHASE A EXIT 0
+As Described at 0xA1abE645e6454E7A7128005877923f1A9DC51652 · phase B 
+seller 0x24E7D53028c8F47E29f3FC96Fc8d42369248D402 · buyer 0x3354Da34038e8B5581B24e9a916Cbc2FF3ccfE58 · stranger 0x23d44Be32d64113Ff54F993c22DC9Fc319FB052D 
+

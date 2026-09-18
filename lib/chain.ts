@@ -520,6 +520,37 @@ export async function write(
   return hash;
 }
 
+/** Deploys the contract source from the connected wallet (the /deploy page). Resolves to the deploy tx hash. */
+export async function deploy(code: string): Promise<string> {
+  if (isMock) return "0x" + "ad".repeat(32);
+  const signer = getSigner();
+  if (!signer) throw new Error("Connect a wallet first.");
+  const chainId = await getChainId(signer.provider);
+  if (chainId !== CHAIN_ID) {
+    throw new Error(
+      `Your wallet is on ${chainName(chainId)}. Switch it to GenLayer Studio (chain 61999) before signing.`,
+    );
+  }
+  const client = createClient({
+    chain: studio,
+    account: signer.address as Address,
+    provider: signer.provider,
+  });
+  const hash = await client.deployContract({ code, args: [], leaderOnly: false });
+  if (typeof hash !== "string" || !hash.startsWith("0x")) {
+    throw new Error("The wallet returned no transaction hash.");
+  }
+  return hash;
+}
+
+/** The address a deploy transaction created; "" until the network has accepted it. */
+export async function deployedAddress(hash: string): Promise<string> {
+  if (isMock) return "0x" + "ad".repeat(20);
+  const tx = await withRetry(() => rpc<RawTx | null>("eth_getTransactionByHash", [hash]), 2);
+  const data = tx?.data as { contract_address?: string } | undefined;
+  return typeof data?.contract_address === "string" ? data.contract_address : "";
+}
+
 /** One poll of a transaction. Pages call this every ~3 s until FINALIZED. */
 export async function txStatus(hash: string): Promise<TxStatus> {
   if (isMock) return mock.txStatus(hash);

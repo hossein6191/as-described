@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
@@ -47,6 +48,12 @@ export function SiteFooter() {
             <a href="https://explorer-studio.genlayer.com" target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline">
               Explorer
             </a>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            <Link href="/deploy" className="underline-offset-4 hover:underline">
+              Deploy your own register
+            </Link>{" "}
+            from the same source.
           </p>
           <p className="text-xs text-gold">Studio test network. Test GEN only, no real money.</p>
         </div>
