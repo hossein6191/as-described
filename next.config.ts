@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Turbopack's on-disk cache chokes on the macOS "._" sidecar files this drive writes into .next;
+  // the cache is a speed-up only, so dev runs without it (builds keep their own cache and sweep first).
+  experimental: {
+    turbopackFileSystemCacheForDev: false,
+  },
   async headers() {
     return [
       {

@@ -35,3 +35,9 @@ PHASE A EXIT 0
 As Described at 0xA1abE645e6454E7A7128005877923f1A9DC51652 · phase B 
 seller 0x24E7D53028c8F47E29f3FC96Fc8d42369248D402 · buyer 0x3354Da34038e8B5581B24e9a916Cbc2FF3ccfE58 · stranger 0x23d44Be32d64113Ff54F993c22DC9Fc319FB052D 
 
+      list_pack  0x9265f2c874103b64edbbb6d2b2c8ab778f772c123328a7c5f8d3ed49a82ab7bd  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  pack 2 is listed  — L3
+      buy  0x5704a36a848bb15a9ce35a7dea54ecfecd2027fdc48b1ec07f68b6ae1423bbe7  4 agree, 0 disagree, 1 idle  SUCCESS
+PASS  buy pack 2  — O2
+      open_dispute  0x87253a43cbacfca2435d7fe5a8944c0d690150a147c92e7328c8070d490da56b  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer disputes recipe 3 against the 30-minute promise  — 3 agree, 0 disagree, 2 idle
