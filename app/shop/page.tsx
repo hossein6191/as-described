@@ -11,16 +11,19 @@ import { CardGridSkeleton, ReadBlock } from "@/components/read-state";
 import { useRead } from "@/components/use-read";
 import { isMock, readListing, readListingIds, type Listing } from "@/lib/chain";
 import { packStatus } from "@/lib/api";
+import { isDemoHashes } from "@/lib/demo-keys";
 import { mockPackUploaded } from "@/lib/chain-mock";
 import { DEMO_SELLER } from "@/lib/config";
 import { gen } from "@/lib/format";
 
 type Row = { listing: Listing; uploaded: boolean };
 
-async function uploadedOf(id: string): Promise<boolean> {
-  if (isMock) return mockPackUploaded(id);
+async function uploadedOf(l: Listing): Promise<boolean> {
+  if (isMock) return mockPackUploaded(l.id);
+  // A demo pack's text ships with the site: no delivery store, no status call.
+  if (await isDemoHashes(l.hashes)) return true;
   try {
-    return (await packStatus(id)).uploaded;
+    return (await packStatus(l.id)).uploaded;
   } catch {
     return false;
   }
@@ -30,7 +33,8 @@ async function readShop() {
   const ids = await readListingIds();
   const rows = await Promise.all(
     ids.data.map(async (id) => {
-      const [l, uploaded] = await Promise.all([readListing(id), uploadedOf(id)]);
+      const l = await readListing(id);
+      const uploaded = l.data ? await uploadedOf(l.data) : false;
       return { row: l.data ? { listing: l.data, uploaded } : null, source: l.source };
     }),
   );

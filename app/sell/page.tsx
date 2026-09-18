@@ -17,6 +17,7 @@ import { isMock, readListing } from "@/lib/chain";
 import { manifestOf, sha256Hex, storageStatus, uploadMessage, uploadPack, type StorageStatus } from "@/lib/api";
 import { mockStorePack } from "@/lib/chain-mock";
 import { useRead, useSearchString } from "@/components/use-read";
+import { demoKeys, demoSectionsFor } from "@/lib/demo-keys";
 import { BlockSkeleton, ReadBlock } from "@/components/read-state";
 import { DEMO_PACKS, PROMISE_TEMPLATES, WORLD_KNOWLEDGE_WORDS } from "@/lib/demo-packs";
 import { gen, toAtto } from "@/lib/format";
@@ -37,20 +38,6 @@ const WINDOWS = [
 ];
 
 type Step = "form" | "listing" | "upload" | "done";
-
-// The demo packs' hash lists, computed once: a listing whose hashes match one of them needs no storage.
-let demoKeysPromise: Promise<string[]> | null = null;
-const demoKeys = () => {
-  if (!demoKeysPromise) {
-    demoKeysPromise = Promise.all(DEMO_PACKS.map((p) => Promise.all(p.sections.map(sha256Hex)).then((h) => h.join(","))));
-  }
-  return demoKeysPromise;
-};
-const demoSectionsFor = async (hashes: string[]): Promise<string[] | null> => {
-  const keys = await demoKeys();
-  const i = keys.indexOf(hashes.map((h) => h.toLowerCase()).join(","));
-  return i >= 0 ? [...DEMO_PACKS[i].sections] : null;
-};
 
 function StorageNote({ storage, isDemo }: { storage: StorageStatus | null; isDemo: boolean }) {
   if (isMock || !storage || storage.available || isDemo) return null;
@@ -91,6 +78,11 @@ export default function SellPage() {
   }, []);
   const isDemo = keys.includes(hashes.join(","));
   const storageBlocked = !isMock && !!storage && !storage.available && !isDemo;
+  // Read inside the tx callback below, which is created once.
+  const isDemoRef = React.useRef(isDemo);
+  React.useEffect(() => {
+    isDemoRef.current = isDemo;
+  }, [isDemo]);
 
   // live sha256 per section
   React.useEffect(() => {
@@ -143,7 +135,8 @@ export default function SellPage() {
     const r = s.result;
     if (s.applied && r && r.ok === true && typeof r.listing === "string") {
       setListingId(r.listing);
-      setStep("upload");
+      // A demo pack's text ships with the site: there is nothing to upload, the pack is live.
+      setStep(isDemoRef.current ? "done" : "upload");
     }
   });
 
@@ -243,7 +236,9 @@ export default function SellPage() {
                 <Label htmlFor="kind">Kind</Label>
                 <Select value={kind} onValueChange={(v) => setKind(String(v))}>
                   <SelectTrigger id="kind" className="w-full">
-                    <SelectValue />
+                    <SelectValue>
+                      <span className="capitalize">{kind}</span>
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {KINDS.map((k) => (
@@ -351,7 +346,7 @@ export default function SellPage() {
                 <Label htmlFor="window">Dispute window</Label>
                 <Select value={windowSeconds} onValueChange={(v) => setWindowSeconds(String(v))}>
                   <SelectTrigger id="window" className="w-full">
-                    <SelectValue />
+                    <SelectValue>{WINDOWS.find((x) => x.value === windowSeconds)?.label ?? windowSeconds}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {WINDOWS.map((x) => (
@@ -380,7 +375,7 @@ export default function SellPage() {
             <h2 className="font-semibold">Publish</h2>
             <ol className="mt-3 space-y-3 text-sm">
               <StepRow n={1} label="Sign list_pack" hint="Title, promises and hashes go on chain." state={step === "form" ? "todo" : step === "listing" ? "busy" : "done"} />
-              <StepRow n={2} label="Sign the upload" hint="The section text goes to the delivery store, bound to the listing." state={step === "upload" ? (uploading ? "busy" : "todo") : step === "done" ? "done" : "todo"} />
+              <StepRow n={2} label={isDemo ? "Upload: nothing to do" : "Sign the upload"} hint={isDemo ? "A demo pack's text ships with the site, so buyers can read it as soon as it is listed." : "The section text goes to the delivery store, bound to the listing."} state={step === "upload" ? (uploading ? "busy" : "todo") : step === "done" ? "done" : "todo"} />
             </ol>
 
             <div className="mt-4 space-y-3">
@@ -432,6 +427,7 @@ export default function SellPage() {
                   <p className="flex items-center gap-2 font-medium">
                     <Check className="size-4 text-keeps" /> Your pack is live.
                   </p>
+                  {isDemo ? <p className="text-xs text-muted-foreground">Demo pack: its text ships with the site, so no upload was needed.</p> : null}
                   <Button asChild variant="cool" className="w-full">
                     <Link href={`/pack/${listingId}`}>
                       Open {listingId} <ArrowRight />

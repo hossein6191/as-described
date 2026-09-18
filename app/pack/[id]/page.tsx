@@ -21,6 +21,7 @@ import { useWallet } from "@/components/wallet";
 import { WalletGate } from "@/components/wallet-gate";
 import { isMock, readBondFor, readListing, readOrder, readOrdersOf, type Order } from "@/lib/chain";
 import { packStatus } from "@/lib/api";
+import { isDemoHashes } from "@/lib/demo-keys";
 import { mockPackUploaded } from "@/lib/chain-mock";
 import { DEMO_SELLER } from "@/lib/config";
 import { gen, kindEmoji, kindGradient, windowLabel } from "@/lib/format";
@@ -35,7 +36,9 @@ async function readPackPage(id: string) {
   if (!l.data) return { data: null, source: l.source } as const;
   const [bond, uploaded] = await Promise.all([
     readBondFor(id).catch(() => bondFallback(l.data!.priceAtto)),
-    isMock ? Promise.resolve(mockPackUploaded(id)) : packStatus(id).then((s) => s.uploaded).catch(() => false),
+    isMock
+      ? Promise.resolve(mockPackUploaded(id))
+      : isDemoHashes(l.data.hashes).then((demo) => demo || packStatus(id).then((s) => s.uploaded).catch(() => false)),
   ]);
   return { data: { listing: l.data, bondAtto: bond && bond !== "0" ? bond : bondFallback(l.data.priceAtto), uploaded }, source: l.source } as const;
 }
@@ -164,7 +167,14 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                 </section>
               </div>
 
-              <div className="min-w-0 lg:sticky lg:top-20 lg:self-start">
+              <div className="min-w-0 space-y-3 lg:sticky lg:top-20 lg:self-start">
+                {l.windowSeconds <= 900 ? (
+                  <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
+                    Short dispute window: after buying you have {windowLabel(l.windowSeconds)} to dispute a section. The two
+                    on-chain steps of a dispute take about two minutes together, so read the pack first and decide quickly.
+                    When the window closes, anyone can release the price to the seller.
+                  </p>
+                ) : null}
                 <BuyCard
                   title={l.title}
                   priceLabel={price}
