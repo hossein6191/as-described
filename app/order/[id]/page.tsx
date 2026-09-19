@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, Check, Circle, Clock, FileQuestion, Gavel, Loader2, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, Check, Circle, Clock, FileQuestion, Gavel, ListChecks, Loader2, ShieldAlert, X } from "lucide-react";
 
 import { Address, TxLink } from "@/components/address";
 import { PromisePills } from "@/components/promise-pills";
@@ -21,6 +21,8 @@ import { WalletGate } from "@/components/wallet-gate";
 import { balanceOf, isMock, readListing, readOrder, type Listing, type Order, type OrderStatus, type TxStatus } from "@/lib/chain";
 import { fetchPack, readMessage, sha256Hex } from "@/lib/api";
 import { mockPackSections } from "@/lib/chain-mock";
+import { demoKeys } from "@/lib/demo-keys";
+import { DEMO_PACKS } from "@/lib/demo-packs";
 import { countdown, gen, plusHours, statusLabel, when, windowLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +119,27 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const [packBusy, setPackBusy] = React.useState(false);
   const order = page.data?.order ?? null;
   const listing = page.data?.listing ?? null;
+
+  // The checklist's "Demo pack" box: when the listing's hashes are exactly one of the demo packs',
+  // that pack's hint is shown (it never names the section or the ingredient).
+  const [demoHint, setDemoHint] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!listing || !listing.hashes.length) return;
+    let alive = true;
+    const key = listing.hashes.map((h) => h.toLowerCase()).join(",");
+    demoKeys()
+      .then((keys) => {
+        if (!alive) return;
+        const i = keys.indexOf(key);
+        setDemoHint(i >= 0 ? DEMO_PACKS[i].hint : null);
+      })
+      .catch(() => {
+        if (alive) setDemoHint(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [listing]);
 
   const verify = React.useCallback(async (texts: string[], hashes: string[]) => {
     const rows: SectionRow[] = [];
@@ -330,9 +353,169 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
               ? `In escrow · ${countdown(o.deadlineAt, now)}`
               : statusLabel(o.status, o.verdict);
 
+          // ---- the guided checklist: where the viewer is, and what to do next ----
+          const bond = gen(o.bondRequiredAtto || o.bondAtto);
+          const settled = o.status === "settled" || o.status === "settled_stale";
+          const bondFailed = bondTx.final ? failureOf(bondTx.final) : "";
+          const disputeExists = o.status !== "paid" || (!!pick && !bondTx.error && !bondFailed);
+          const bondBusy = (!!bondTx.hash && !bondTx.final) || bondRecording;
+          const judgeBusy = !!judgeTx.hash && !judgeTx.final;
+          const s1: StepState = sections ? "done" : "active";
+          const s2: StepState = disputeExists ? "done" : sections ? "active" : "todo";
+          const s3: StepState = bondDone || settled ? "done" : !disputeExists ? "todo" : bondBusy ? "busy" : "active";
+          const s4: StepState = settled ? "done" : !bondDone ? "todo" : judgeBusy ? "busy" : "active";
+          const s5: StepState = settled ? "done" : "todo";
+          const pickedSection = (o.status === "disputed" ? o.sectionIndex : (pick?.section ?? o.sectionIndex)) + 1;
+          const pickedPromise = (o.status === "disputed" ? o.promiseIndex : (pick?.promise ?? o.promiseIndex)) + 1;
+          const summary =
+            o.status === "settled" && o.verdict
+              ? `Settled: section ${o.sectionIndex + 1} vs P${o.promiseIndex + 1}, verdict ${o.verdict}. One dispute per order, and this one is used.`
+              : o.status === "settled_stale"
+                ? `Settled by rule: no verdict within ${STALE_HOURS} hours, so the price went to the seller and the bond back to the buyer.`
+                : o.status === "released"
+                  ? "Released: the window closed with no dispute and the price went to the seller."
+                  : o.status === "refunded"
+                    ? `Refunded: section ${o.missingIndex + 1} was never revealed, so the full price went back to the buyer.`
+                    : o.status === "missing"
+                      ? `Section ${o.missingIndex + 1} is reported missing. The seller's reveal window is running; the box below has the next step.`
+                      : o.status === "paid" && deadlinePassed
+                        ? "The dispute window has closed. Nothing can be disputed now; anyone may release the price to the seller below."
+                        : viewer === "seller" && o.status === "paid"
+                          ? `You are the seller. The buyer has until ${when(o.deadlineAt)} to dispute one section; after that anyone may release the price to you.`
+                          : "";
+          const checklist = summary ? (
+            <section className="flex items-start gap-3 rounded-2xl border bg-card p-4 text-sm">
+              <ListChecks className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <p>{summary}</p>
+            </section>
+          ) : (
+            <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-semibold">
+                  <ListChecks className="size-5" /> What to do next
+                </h2>
+                <p className="text-sm text-muted-foreground">Five steps from purchase to verdict. The highlighted step is where you are.</p>
+              </div>
+              <ol className="space-y-2 text-sm">
+                <GuideStep n={1} state={s1} title="Read your pack">
+                  {s1 === "active" ? (
+                    isMock ? (
+                      <p className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" /> Loading the pack…
+                      </p>
+                    ) : !w.address ? (
+                      <>
+                        <p className="text-muted-foreground">Connect the wallet you bought with, then sign one message. The signature only proves you are the buyer.</p>
+                        <WalletGate action="read your pack">{null}</WalletGate>
+                      </>
+                    ) : !isBuyer ? (
+                      <p className="text-muted-foreground">
+                        This order belongs to <span className="font-mono break-all">{o.buyer}</span>. Connect that wallet to read the pack.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-muted-foreground">Sign one message; every section is then fetched and checked against what the seller committed before the sale.</p>
+                        {l ? (
+                          <Button type="button" size="sm" variant="cool" disabled={packBusy} onClick={() => void loadPack(o, l)}>
+                            {packBusy ? <Loader2 className="animate-spin" /> : null} Sign to read the pack
+                          </Button>
+                        ) : (
+                          <p className="text-muted-foreground">The listing did not load, so the pack cannot be checked yet.</p>
+                        )}
+                        {packError ? <p className="text-breaks">{packError}</p> : null}
+                      </>
+                    )
+                  ) : s1 === "done" && sections ? (
+                    <p className="text-muted-foreground">
+                      {sections.length} sections loaded, {sections.filter((x) => x.ok).length} delivered as committed.
+                    </p>
+                  ) : null}
+                </GuideStep>
+                <GuideStep n={2} state={s2} title="Find the section that breaks a promise">
+                  {s2 === "active" ? (
+                    <>
+                      <p>
+                        A green tick only means the text is exactly what the seller committed. It says nothing about the promises. Read the sections against the promises and pick the one that breaks one.
+                      </p>
+                      <p>
+                        You get <strong>one dispute per order</strong>, so choose carefully. A dispute posts a bond of <strong>{bond}</strong>: it comes back with the price if you are right, it goes to the seller if you are wrong.
+                      </p>
+                      {undelivered.length > 0 ? (
+                        <p className="text-muted-foreground">
+                          {undelivered.length} of {sections?.length ?? 0} sections did not arrive as committed. For those, report the section missing instead; that path needs no bond.
+                        </p>
+                      ) : null}
+                      {bondTx.error || bondFailed ? <p className="text-breaks">The bond did not go through: {bondTx.error || bondFailed} Pick the section again.</p> : null}
+                      {demoHint ? (
+                        <div className="rounded-lg border border-dashed border-primary/60 bg-primary/5 p-3 text-xs">
+                          <p className="mb-1 font-semibold tracking-wide text-primary uppercase">Demo pack</p>
+                          <p>{demoHint}</p>
+                        </div>
+                      ) : null}
+                      <Button type="button" size="sm" variant="cool" onClick={scrollTo("pack-sections")}>
+                        Go to the sections
+                      </Button>
+                    </>
+                  ) : s2 === "done" ? (
+                    <p className="text-muted-foreground">
+                      Section {pickedSection} against P{pickedPromise}.
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground">One dispute per order. A green tick says the text is as committed, not that the promises hold.</p>
+                  )}
+                </GuideStep>
+                <GuideStep n={3} state={s3} title={`Post the bond (${bond})`}>
+                  {s3 === "active" ? (
+                    <p className="text-muted-foreground">Confirm the {bond} bond in your wallet. It is held by the contract until the verdict.</p>
+                  ) : s3 === "busy" ? (
+                    <>
+                      <p className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" /> Posting the bond. The order is marked disputed once the network has it.
+                      </p>
+                      <Button type="button" size="sm" variant="outline" onClick={scrollTo("dispute-box")}>
+                        Watch the progress
+                      </Button>
+                    </>
+                  ) : s3 === "done" ? (
+                    <p className="text-muted-foreground">Posted {when(o.disputedAt)}.</p>
+                  ) : (
+                    <p className="text-muted-foreground">Held by the contract until the verdict.</p>
+                  )}
+                </GuideStep>
+                <GuideStep n={4} state={s4} title="Ask the validators">
+                  {s4 === "active" || s4 === "busy" ? (
+                    <>
+                      <p>Five validators each read the section and the promise on their own model and answer one word. The round takes about a minute.</p>
+                      {s4 === "busy" ? (
+                        <p className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="size-3.5 animate-spin" /> The validators are reading now.
+                        </p>
+                      ) : disputedText === null ? (
+                        <p className="text-muted-foreground">The section text is sent on chain. Load the pack (step 1) or paste the exact text in the dispute box, then press Ask the validators.</p>
+                      ) : (
+                        <p className="text-muted-foreground">The section text is sent on chain. Press Ask the validators in the dispute box.</p>
+                      )}
+                      <Button type="button" size="sm" variant={s4 === "busy" ? "outline" : "cool"} onClick={scrollTo("dispute-box")}>
+                        {s4 === "busy" ? "Watch the votes" : "Go to the dispute"}
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground">Five validators read the section against the promise, each on their own model, and answer one word.</p>
+                  )}
+                </GuideStep>
+                <GuideStep n={5} state={s5} title="Verdict">
+                  <p className="text-muted-foreground">
+                    <span className="text-breaks">breaks</span>: price and bond back to you. <span className="text-keeps">keeps</span>: both to the seller. <span className="text-gold">unclear</span>: price to the seller, bond back.
+                  </p>
+                </GuideStep>
+              </ol>
+            </section>
+          );
+
           return (
             <div className="grid min-w-0 gap-8 lg:grid-cols-[400px_1fr]">
-              <div className="flex min-w-0 flex-col items-center gap-4 lg:items-start">
+              <div className="min-w-0 lg:col-start-2 lg:row-start-1">{checklist}</div>
+              <div className="flex min-w-0 flex-col items-center gap-4 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:items-start">
                 <AnimatedTicket
                   orderId={o.id}
                   amountGen={gen(o.priceAtto)}
@@ -397,7 +580,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               </div>
 
-              <div className="min-w-0 space-y-8">
+              <div className="min-w-0 space-y-8 lg:col-start-2 lg:row-start-2">
                 {/* verdict card */}
                 {o.status === "settled" && o.verdict ? (
                   <section
@@ -432,6 +615,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     ) : landed === "timeout" ? (
                       <p className="mt-2 text-xs text-muted-foreground">The buyer&apos;s balance has not moved yet. Check the wallet in a minute; the contract already sent it.</p>
                     ) : null}
+                    <SettledNote listing={o.listing} />
                   </section>
                 ) : null}
 
@@ -439,6 +623,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                   <section className="rounded-2xl border p-5 text-sm">
                     <h2 className="text-lg font-semibold">Settled by rule</h2>
                     <p className="mt-2 text-muted-foreground">No verdict was stored within {STALE_HOURS} hours of the dispute, so the price went to the seller and the bond back to the buyer.</p>
+                    <SettledNote listing={o.listing} />
                   </section>
                 ) : null}
                 {o.status === "refunded" ? (
@@ -456,7 +641,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
                 {/* two-step dispute checklist (in progress or resumable) */}
                 {(o.status === "disputed" || bondTx.hash || judgeTx.hash) && o.status !== "settled" ? (
-                  <section className="space-y-4 rounded-2xl border border-gold/50 bg-card p-5">
+                  <section id="dispute-box" className="scroll-mt-24 space-y-4 rounded-2xl border border-gold/50 bg-card p-5">
                     <h2 className="flex items-center gap-2 text-lg font-semibold">
                       <ShieldAlert className="size-5 text-gold" /> Dispute: section {(o.status === "disputed" ? o.sectionIndex : pick?.section ?? o.sectionIndex) + 1} vs P
                       {(o.status === "disputed" ? o.promiseIndex : pick?.promise ?? o.promiseIndex) + 1}
@@ -600,17 +785,18 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 ) : null}
 
                 {/* the pack */}
-                <section className="space-y-4">
+                <section id="the-pack" className="scroll-mt-24 space-y-4">
                   <div className="flex flex-wrap items-end justify-between gap-2">
-                    <div>
+                    <div className="min-w-0">
                       <h2 className="text-lg font-semibold">The pack</h2>
                       <p className="text-sm text-muted-foreground">
                         {l ? `${l.sectionCount} sections, ${l.promises.length} promises.` : "Listing details did not load."} Every section is hashed here and compared with the chain.
                       </p>
+                      <p className="text-xs text-muted-foreground">A tick means the text is exactly what the seller committed before the sale. Whether it keeps the promises is what a dispute decides.</p>
                     </div>
                     {sections ? (
                       <span className="text-xs text-muted-foreground">
-                        {sections.filter((s) => s.ok).length}/{sections.length} match the committed hashes
+                        {sections.filter((s) => s.ok).length}/{sections.length} delivered as committed
                       </span>
                     ) : null}
                   </div>
@@ -659,7 +845,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                       {isMock && packError ? <p className="text-sm text-breaks">{packError}</p> : null}
                     </div>
                   ) : (
-                    <ol className="space-y-3">
+                    <ol id="pack-sections" className="scroll-mt-24 space-y-3">
                       {sections.map((s) => (
                         <li
                           key={s.index}
@@ -677,7 +863,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                               </span>
                             ) : s.ok === true ? (
                               <span className="inline-flex items-center gap-1 text-xs text-keeps">
-                                <Check className="size-3.5" /> matches hash
+                                <Check className="size-3.5" /> delivered as committed
                               </span>
                             ) : s.ok === false ? (
                               <span className="inline-flex items-center gap-1 text-xs text-breaks">
@@ -778,17 +964,62 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   );
 }
 
-function StepDot({ state }: { state: "todo" | "busy" | "done" }) {
+type StepState = "todo" | "active" | "busy" | "done";
+
+const scrollTo = (id: string) => () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+function StepDot({ state }: { state: StepState }) {
   return (
     <span
       className={cn(
         "mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full border text-xs",
         state === "done" && "border-keeps bg-keeps/15 text-keeps",
         state === "busy" && "border-primary text-primary",
+        state === "active" && "border-gold bg-gold/15 text-gold",
         state === "todo" && "text-muted-foreground",
       )}
     >
-      {state === "done" ? <Check className="size-3.5" /> : state === "busy" ? <Loader2 className="size-3.5 animate-spin" /> : <Circle className="size-2 fill-current opacity-40" />}
+      {state === "done" ? (
+        <Check className="size-3.5" />
+      ) : state === "busy" ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <Circle className={cn("size-2 fill-current", state === "todo" && "opacity-40")} />
+      )}
     </span>
+  );
+}
+
+/** One row of the guided checklist: the active step is boxed in gold, done steps are ticked. */
+function GuideStep({ n, state, title, children }: { n: number; state: StepState; title: string; children?: React.ReactNode }) {
+  return (
+    <li
+      className={cn(
+        "flex gap-3 rounded-xl border border-transparent px-3 py-2",
+        state === "active" && "border-gold/60 bg-gold/10",
+        state === "busy" && "border-primary/40 bg-primary/5",
+      )}
+      aria-current={state === "active" ? "step" : undefined}
+    >
+      <StepDot state={state} />
+      <div className="min-w-0 flex-1 space-y-2 break-words">
+        <p className={cn("font-medium", state === "todo" && "text-muted-foreground")}>
+          {n}. {title}
+        </p>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/** Under a verdict: the order is spent, a second ruling needs a second purchase. */
+function SettledNote({ listing }: { listing: string }) {
+  return (
+    <div className="mt-4 flex flex-col gap-2 rounded-lg border bg-background/60 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <p>This order is settled: one dispute per order. Want another ruling? Buy the pack again and dispute a different section.</p>
+      <Button asChild size="sm" variant="outline" className="shrink-0">
+        <Link href={`/pack/${listing}`}>Buy the pack again</Link>
+      </Button>
+    </div>
   );
 }

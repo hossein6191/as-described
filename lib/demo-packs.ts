@@ -13,6 +13,8 @@ export type DemoPack = {
   windowSeconds: number;
   /** what the pack is for, shown on the sell page's "Load a demo pack" menu */
   note: string;
+  /** what a buyer should try, shown in the order page's checklist; never names the section or the ingredient */
+  hint: string;
 };
 
 const VEG_PROMISES = [
@@ -209,6 +211,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "1",
     windowSeconds: 3 * 86400,
     note: "Recipe 5 has bacon: a dispute on section 5 against promise 1 breaks.",
+    hint: "One recipe quietly breaks promise P1. Read them, find it, and dispute that section against P1 to see a refund; dispute any other section and the validators will side with the seller.",
   },
   {
     title: "Weeknight Vegetarian, 8 recipes — the honest twin",
@@ -218,6 +221,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "1",
     windowSeconds: 3 * 86400,
     note: "Same pack with smoked tofu in recipe 5: every dispute keeps.",
+    hint: "The honest twin: every promise holds. Any dispute ends with the seller paid and your bond gone; try it if you want to see the validators refuse a bad claim.",
   },
   {
     title: "Cold Email Templates, 6 templates",
@@ -231,6 +235,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "0.5",
     windowSeconds: 300,
     note: "All promises kept; the 5-minute window shows a release to the seller.",
+    hint: "Every promise holds and the window is five minutes; after it closes, press Release. Nothing to dispute here.",
   },
 ];
 
