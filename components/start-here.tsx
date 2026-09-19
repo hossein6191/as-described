@@ -1,8 +1,9 @@
 "use client";
 
 // The step-by-step guide a first-time visitor follows. Each step reads live state (wallet,
-// balance, register) so the "now" step is always the one that actually comes next; the rest
-// are links. Collapsible, remembered per browser; the "?" pill brings it back.
+// balance, register, and this wallet's orders and listings on chain) so the "now" step is always
+// the one that actually comes next, and the buttons go to the exact page for it. Collapsible,
+// remembered per browser; the "?" pill brings it back.
 
 import * as React from "react";
 import Link from "next/link";
@@ -10,7 +11,17 @@ import { Check, ChevronDown, ChevronUp, CircleDot, HelpCircle } from "lucide-rea
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/components/wallet";
-import { contractAddress, isMock } from "@/lib/chain";
+import { useRead } from "@/components/use-read";
+import {
+  contractAddress,
+  isMock,
+  readListing,
+  readListingIds,
+  readOrder,
+  readOrdersOfBuyer,
+  type Order,
+} from "@/lib/chain";
+import { MOCK_BUYER } from "@/lib/chain-mock";
 import { readItem, writeItem } from "@/lib/browser-store";
 import { useLocal } from "@/components/use-local";
 import { cn } from "@/lib/utils";
@@ -22,9 +33,44 @@ type Step = {
   detail: React.ReactNode;
   done: boolean;
   href?: string;
+  cta?: string;
   action?: string;
   onAction?: () => void;
 };
+
+type Progress = {
+  latestOrder: Order | null; // the newest order this wallet paid
+  disputed: Order | null; // the newest order with a dispute or a verdict
+  settled: Order | null; // the newest order with a verdict
+  listed: boolean; // this wallet listed a pack
+};
+
+const DISPUTE_STATES = new Set(["disputed", "settled", "settled_stale", "missing"]);
+
+/** What this wallet has done on the register so far: a handful of cached reads, newest orders first. */
+async function readProgress(address: string): Promise<{ data: Progress; source: "chain" | "snapshot" }> {
+  const [orderIds, listingIds] = await Promise.all([readOrdersOfBuyer(address), readListingIds()]);
+  const recent = orderIds.data.slice(-6).reverse();
+  const orders = (await Promise.all(recent.map((id) => readOrder(id)))).map((r) => r.data).filter((o): o is Order => !!o);
+  const a = address.toLowerCase();
+  let listed = false;
+  for (const id of listingIds.data.slice(-12).reverse()) {
+    const l = (await readListing(id)).data;
+    if (l && l.seller.toLowerCase() === a) {
+      listed = true;
+      break;
+    }
+  }
+  return {
+    data: {
+      latestOrder: orders[0] ?? null,
+      disputed: orders.find((o) => DISPUTE_STATES.has(o.status) || !!o.verdict) ?? null,
+      settled: orders.find((o) => !!o.verdict) ?? null,
+      listed,
+    },
+    source: orderIds.source === "snapshot" || listingIds.source === "snapshot" ? "snapshot" : "chain",
+  };
+}
 
 export function StartHere({ className, compact = false }: { className?: string; compact?: boolean }) {
   const w = useWallet();
@@ -32,6 +78,10 @@ export function StartHere({ className, compact = false }: { className?: string; 
   const hasRegister = useLocal(() => !!contractAddress() || isMock, true);
   const hidden = useLocal(() => readItem(HIDDEN_KEY) === "1", false);
   const hide = (v: boolean) => writeItem(HIDDEN_KEY, v ? "1" : "0");
+
+  const address = w.address || (isMock ? MOCK_BUYER : "");
+  const progress = useRead(() => readProgress(address), [address], { enabled: !!address && !hidden });
+  const p = progress.data;
 
   const fund = async () => {
     setFunding(true);
@@ -44,8 +94,13 @@ export function StartHere({ className, compact = false }: { className?: string; 
     }
   };
 
-  const connected = !!w.address;
-  const funded = connected && w.balanceAtto > 0n;
+  const connected = !!w.address || isMock;
+  const funded = connected && (w.balanceAtto > 0n || isMock);
+  const picked = !!p && (!!p.latestOrder || p.listed);
+  const disputed = !!p?.disputed;
+  const judged = !!p?.settled;
+  const orderHref = p?.latestOrder ? `/order/${p.latestOrder.id}` : "/orders";
+  const verdictHref = p?.settled ? `/order/${p.settled.id}` : p?.disputed ? `/order/${p.disputed.id}` : "/ledger";
 
   const steps: Step[] = [
     {
@@ -71,25 +126,28 @@ export function StartHere({ className, compact = false }: { className?: string; 
           own with promises attached.
         </>
       ),
-      done: false,
+      done: picked,
       href: "/shop",
+      cta: "Open the shop",
     },
     {
       title: "Read your pack, then dispute a section",
       detail: (
         <>
-          Your order page (under <Link href="/orders" className="text-primary underline-offset-4 hover:underline">My orders</Link>) shows every
-          section with a hash check. Pick the section that breaks a promise, post the bond, and ask the validators.
+          Your order page shows every section. A tick only means the text is what the seller committed; read the sections against the
+          promises, pick the one that breaks a promise, post the bond and ask the validators. One dispute per order, so choose carefully.
         </>
       ),
-      done: false,
-      href: "/orders",
+      done: disputed,
+      href: orderHref,
+      cta: p?.latestOrder ? `Open order ${p.latestOrder.id}` : "My orders",
     },
     {
       title: "Watch the verdict move the money",
-      detail: "Five validators answer with one word. Breaks: your price and bond come back. Keeps: the seller is paid. The ledger shows every case.",
-      done: false,
-      href: "/ledger",
+      detail: "Five validators each read the section and the promise and answer one word. Breaks: your price and bond come back. Keeps: the seller is paid. The ledger shows every case.",
+      done: judged,
+      href: verdictHref,
+      cta: p?.settled ? "See the verdict" : "Open the ledger",
     },
   ];
   if (!hasRegister) {
@@ -98,9 +156,11 @@ export function StartHere({ className, compact = false }: { className?: string; 
       detail: "This site is not connected to a deployed contract yet. Deploy one from your wallet on the Deploy page; it takes one signature.",
       done: false,
       href: "/deploy",
+      cta: "Deploy",
     });
   }
   const now = steps.findIndex((s) => !s.done);
+  const allDone = now === -1;
 
   if (hidden) {
     return (
@@ -120,10 +180,15 @@ export function StartHere({ className, compact = false }: { className?: string; 
     <section aria-label="How to try As Described" className={cn("rounded-2xl border bg-card p-4 sm:p-6", className)}>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Try it in five steps</h2>
+          <h2 className="text-lg font-semibold">{allDone ? "You have done the whole loop" : "Try it in five steps"}</h2>
           {!compact && (
-            <p className="text-sm text-muted-foreground">Two minutes, a test wallet, and one real dispute decided by validators.</p>
+            <p className="text-sm text-muted-foreground">
+              {allDone
+                ? "Buy another pack and dispute a different section, or sell one of your own."
+                : "Two minutes, a test wallet, and one real dispute decided by validators."}
+            </p>
           )}
+          {progress.loading && address ? <p className="text-xs text-muted-foreground">Checking what this wallet has done so far…</p> : null}
         </div>
         <button
           type="button"
@@ -163,9 +228,9 @@ export function StartHere({ className, compact = false }: { className?: string; 
                 <Button variant={isNow ? "cool" : "outline"} size="sm" onClick={s.onAction} disabled={funding && s.title === "Get test GEN"}>
                   {s.action}
                 </Button>
-              ) : s.href && !s.done ? (
+              ) : s.href && (isNow || (allDone && i === steps.length - 1)) ? (
                 <Button variant={isNow ? "cool" : "outline"} size="sm" asChild>
-                  <Link href={s.href}>Open</Link>
+                  <Link href={s.href}>{s.cta ?? "Open"}</Link>
                 </Button>
               ) : null}
             </li>
