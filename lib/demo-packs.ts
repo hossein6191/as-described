@@ -4,8 +4,13 @@
 // Pack 1: recipe 5 breaks promise 1 (it has bacon). Pack 2 is the honest twin (smoked tofu).
 // Pack 3: six cold-email templates, all promises kept; its 5-minute window shows `release`.
 // Pack 4: revision cards; card 4 has no date. Pack 5: fiction prompts; prompt 6 is two paragraphs.
-// Pack 6: a Tehran walking day; stop 4 has no opening time. Pack 7: support replies, all promises kept.
+// Pack 6: a Lisbon walking day; stop 4 has no opening time. Pack 7: support replies, all promises kept.
 // Pack 8: naming rules; rule 5 has no bad example.
+// Packs 9 to 19 give every kind at least three packs: 9 breakfasts (recipe 4 needs a stove), 10 proposals
+// (template 3 has no date), 11 invitations (honest), 12 physics cards (card 5 has no worked example),
+// 13 Spanish verbs (honest), 14 journal prompts (prompt 5 is not a question), 15 interview prompts (honest),
+// 16 houseplants (plant 4 never says how often to water), 17 Kyoto (honest), 18 a card game (honest),
+// 19 commit messages (rule 6 has no example).
 
 export type DemoPack = {
   title: string;
@@ -265,36 +270,36 @@ Setting: a hospital corridor with a coffee machine that only takes exact change,
 const prompt8 = `Prompt 8: The listing
 Setting: a flat viewing in a city where every flat is taken within the hour, on a Saturday morning in a heatwave. Character: Sunny, the letting agent, twenty-three, showing the same one-bedroom to eleven people in forty minutes. Write it as a single continuous take: the same rooms, the same patter, eleven different faces, each reacting to the same damp patch behind the door. Somewhere around the seventh viewer Sunny should stop performing. Decide who gets the flat and make it the wrong person, in a way that Sunny can see and cannot fix.`;
 
-// ---- Pack 6: a walking day in Tehran, six stops. Stop 4 gives no opening time. ----
+// ---- Pack 6: a first day in Lisbon, six stops. Stop 4 gives no opening time. ----
 
-const TEHRAN_PROMISES = [
+const LISBON_PROMISES = [
   "Every stop lists an opening time.",
-  "Every stop is reachable on foot from the previous one, and the guide says how long the walk is.",
+  "Every stop says how to get there from the previous one, on foot or by tram 28, and how long it takes.",
   "No stop is a shopping mall.",
 ];
 
-const stop1 = `Stop 1: Golestan Palace, 9:00 to 17:00 (last entry 16:00)
-Start here, at the oldest part of the city that still stands, because the rest of the day walks outward from it. Golestan is a walled garden of pavilions built and rebuilt by the Qajar kings, and the thing to see first is the mirror hall, where thousands of cut mirrors turn a plain room into something that seems to be lit from inside. Buy the garden ticket at the gate and add the halls you want; the mirror hall and the marble throne veranda are worth it, the rest can be skipped on a first visit. Go early: by eleven the tour groups arrive and the garden loses its quiet. Allow ninety minutes. The metro stop is Panzdah-e Khordad, and the cafe just inside the entrance sells a good cardamom tea for the price of a bus ticket.`;
+const stop1 = `Stop 1: Praça do Comércio and the Rua Augusta arch, 9:00 to 19:00 (the arch viewpoint)
+Start at the river. The square is the size of a small town and open on one side to the Tagus, with yellow arcades on the other three and a bronze king on a horse in the middle. Walk down to the water first: the two marble columns at the edge are where ships once landed passengers, and standing between them tells you why the city was built here. Then turn round and go through the arch at the top of the square. The lift and stairs inside take you to a terrace above the arch, with the grid of the lower town laid out in front of you and the castle on its hill to the right. Buy the ticket at the small counter inside the arch; it takes ten minutes and there is rarely a queue before eleven. Have a coffee under the arcades on the way out, at one of the older cafes on the west side, and look at the map: everything else today is uphill from here.`;
 
-const stop2 = `Stop 2: The Grand Bazaar, 8:30 to 17:00 (closed Fridays)
-Walk: 10 minutes. Leave Golestan by the main gate, turn left onto Panzdah-e Khordad Street and keep the palace wall on your left until the covered entrance of the bazaar opens on your right.
-This is not a market so much as a roofed town, ten kilometres of lanes, and nobody sees all of it. Pick one line and follow it: the carpet lane for colour, the copper lane for noise, the spice lane for smell. Prices are not written down, so ask and expect the first number to be a starting point, though nobody will mind if you only look. Keep an eye on the porters pushing hand carts; they have right of way and they know it. Around midday the lanes fill with people heading to the mosque inside, and this is the best moment to stand still and watch the whole thing move around you.`;
+const stop2 = `Stop 2: The Sé cathedral, 10:00 to 18:00 (cloister and treasury closed Sundays)
+Walk: 10 minutes. Leave the square at its top-left corner onto Rua da Alfândega, then bear right and uphill onto Rua de Santo António da Sé; the two squat towers of the cathedral fill the street ahead of you.
+This is the oldest church in the city, begun in 1147 and built like a fortress because it was one: the walls are thick, the windows small, and the front is more castle than cathedral. Inside it is dark and cool, which is welcome after the climb. Look for the rose window above the door, then pay the small fee for the cloister behind the altar, where excavations have opened up a pit of Roman and Moorish foundations under the arches. The trams grind past the front door every few minutes; a photograph of the yellow tram against the stone is the one everybody takes, and the corner opposite the door is where to take it.`;
 
-const stop3 = `Stop 3: Haj Ali Darvish tea stall, 8:00 to 16:00
-Walk: 5 minutes, inside the bazaar. From the main entrance lane take the second turning on the left and look for the queue; the stall itself is barely wider than a doorway.
-This is said to be the smallest tea shop in the city and it has been pouring tea from the same corner for over a century. There is no seating. You are handed a small glass, you drink it standing in the lane with everyone else, and you pass the glass back. Take it with a lump of saffron sugar candy held in the mouth, the way the regulars do, and you will understand why people queue for something so simple. The current owner is the grandson of the founder and will tell you so, cheerfully, while pouring. Ten minutes here resets the whole morning.`;
+const stop3 = `Stop 3: Alfama and the São Jorge castle, 9:00 to 21:00 (last entry 20:30)
+Walk: 15 minutes. From the cathedral door keep climbing along Rua Augusto Rosa, past the Santa Luzia viewpoint on your right, then follow the brown signs for the castle up through the lanes; every fork goes up.
+Alfama is the district that survived the 1755 earthquake, so its streets still follow the old Moorish plan: stairs instead of roads, laundry across the lanes, and a small square every hundred metres with a tiled fountain and two old men. Take any lane that goes up and you will reach the castle walls. Inside, the walls are the point: walk the full circuit of the ramparts for the best view of the river and the roofs, and climb the towers if the stairs are open. The gardens have peacocks and shade. Allow ninety minutes for the castle and let yourself get lost on the way; the district is small enough that downhill always leads back out.`;
 
-const stop4 = `Stop 4: Masoudieh Mansion and garden
-Walk: 15 minutes. Leave the bazaar by its northern edge onto Panzdah-e Khordad Street, turn right, then left up Ekbatan Street; the mansion's brick gate is on the left just before Baharestan Square.
-This was a Qajar prince's house, later the ministry of education, and for years a near-ruin; the garden is the reason to come. It is a long rectangle of old plane trees and a shallow pool, with the tiled facade of the main building at one end and a small cafe under an arcade at the other. It is quiet in a way nowhere else on this route is, and the tilework, birds and lions in blue and ochre, repays a slow look. If the house itself is open, the painted ceilings on the first floor are the highlight; if not, sit by the pool with a tea and let your feet recover before the afternoon.`;
+const stop4 = `Stop 4: Pastéis de nata in Alfama
+Walk: 10 minutes. Leave the castle by the main gate, drop down Rua do Chão da Feira and Rua dos Cegos, and look for the small pastelaria on the corner of Largo de São Miguel with a queue at the counter.
+The custard tart is the city's small daily pleasure, and Alfama has a corner shop that makes them through the day. Order two at the counter, ask for canela (cinnamon) and stand at the marble ledge by the window. A good one has a shell that shatters, a filling that is still just warm, and a top blistered almost black in patches; the ones that come out pale and smooth have been sitting too long. Take a bica, the short strong coffee, with it. This is a good moment to sit for twenty minutes: the morning has been all uphill and the afternoon starts with a tram ride, so let your feet cool down and watch the square. The shop also sells bottles of water, which you will want for the next stretch.`;
 
-const stop5 = `Stop 5: National Museum of Iran, 9:00 to 18:00
-Walk: 20 minutes. From Baharestan Square head west along Jomhouri Street, then turn left down Si-e Tir Street; the museum's tall brick arch, a copy of the great vault at Ctesiphon, is unmistakable.
-Two buildings share the courtyard: the ancient Iran hall and the Islamic-period hall. Do the ancient hall first and do it slowly. The salt man, a miner preserved in a salt mine for seventeen centuries, is the piece everyone photographs, but the small bronze animals from Lorestan and the stone reliefs carried up from Persepolis are what stay with you. Labels are in Persian and English. The Islamic hall upstairs is calmer and its best room is the one of Quran pages in early scripts. Give the pair two hours, and use the museum cafe if you skipped lunch.`;
+const stop5 = `Stop 5: Time Out Market at Mercado da Ribeira, 10:00 to 24:00
+Tram 28: 25 minutes. Walk up to the Miradouro das Portas do Sol stop, board the 28 heading toward Campo de Ourique, ride it down through the Baixa and up to Chiado, get off at Praça Luís de Camões, and walk five minutes down Rua do Alecrim to the market hall by the river.
+The old riverside market hall, built in 1892 with an iron roof and a dome over its central aisle, keeps its fruit and vegetable stalls at one end and turned the other half into a food hall in 2014. It is not a mall: one big room, long shared tables, and some thirty counters run by the city's better kitchens serving small plates. Go round the whole hall once before you choose, then eat two or three things from different counters instead of one full meal: a plate of grilled sardines from the counter nearest the river door, a bowl of caldo verde, a glass of vinho verde. It is loud and crowded from one o'clock, so this is a late lunch at half past two, when the tables free up.`;
 
-const stop6 = `Stop 6: Cafe Naderi, 8:00 to 22:00
-Walk: 15 minutes. From the museum go back up Si-e Tir Street to Jomhouri Street and turn left; the cafe is on the right at number 559, an unremarkable door under a faded sign.
-End the day where the city's writers have ended theirs since the 1920s. The cafe was opened by an Armenian emigre and kept its dark wood, its brass rail and its waiters in white jackets while everything around it changed. Order the cafe glace, the house specialty, or a plain Turkish coffee, and take a table at the back. There is an old hotel behind it and a garden that opens in summer evenings, where the same tables have hosted several generations of arguments about poetry. Nobody will hurry you. It is the right place to write down the day while it is still fresh.`;
+const stop6 = `Stop 6: Belém Tower, 10:00 to 18:00 (last entry 17:30, closed Mondays)
+Walk: 75 minutes. From the market hall cross to the riverside path and simply keep the river on your left the whole way: under the bridge, past the docks at Alcântara, past the Monument to the Discoveries, until the tower appears standing in the water ahead.
+This is a long walk but a flat and easy one, on a path made for it, with the water beside you and the red bridge growing overhead. The tower at the end was built in 1515 to guard the harbour mouth and is the most decorated fortress you will ever see: rope carved in stone, watchtowers shaped like pepper pots, a rhinoceros under one corner. Go inside if the queue is short, for the low vaulted rooms and the terrace with the river on three sides; if the queue is long, the outside is the better half anyway. Sit on the wall by the water afterwards and watch the sun go down behind the tower. Tram 15 runs back to the centre from the road behind you when your feet have had enough.`;
 
 // ---- Pack 7: six customer support replies, all promises kept. ----
 
@@ -498,6 +503,738 @@ Good example:
 
 The good names were not found by thinking harder about words. They were found by asking what the code does and splitting it until each piece had one answer. Treat every process, handle, manager, helper and util in your codebase as a marker for work you have not finished, and finish it when you next touch the file.`;
 
+// ---- Pack 9: six ten-minute breakfasts, no heat. Recipe 4 uses a pan on the stove. ----
+
+const BREAKFAST_PROMISES = [
+  "Every recipe states a total time, and it is 10 minutes or less.",
+  "No recipe needs a stove, a toaster or any other source of heat.",
+  "Every recipe serves one person.",
+];
+
+const breakfast1 = `Recipe 1: Yoghurt bowl with berries and toasted seeds
+Total time: 5 minutes. Serves 1.
+
+Ingredients: 150 g thick plain yoghurt, a handful of berries (fresh or thawed from frozen), 1 tbsp mixed seeds from a packet, 1 tsp honey, a pinch of ground cinnamon, 4 walnut halves.
+
+1. Spoon the yoghurt into a bowl and smooth the top with the back of the spoon.
+2. Scatter the berries over one half and the seeds over the other, so each spoonful can be different.
+3. Break the walnuts over the top with your fingers, drizzle the honey in a thin line, and dust with cinnamon.
+4. Eat straight away, or press a lid on and take it to work; it holds for three hours in a bag without going soft.
+
+Swap the honey for a spoon of jam stirred through the yoghurt if you like it sweeter, or add a chopped date.`;
+
+const breakfast2 = `Recipe 2: Peanut butter and banana wrap
+Total time: 5 minutes. Serves 1.
+
+Ingredients: 1 large soft flour tortilla, 2 tbsp peanut butter, 1 banana, 1 tsp honey, a pinch of flaky salt, a few dark chocolate chips if you want them.
+
+1. Lay the tortilla flat and spread the peanut butter over the whole surface right to the edge; it is the glue that holds the wrap closed.
+2. Peel the banana and lay it whole along the middle. If it is a long one, trim the ends so it sits inside the tortilla.
+3. Drizzle the honey along the banana, add the salt and the chocolate chips.
+4. Fold the two short sides in, then roll from the long side as tightly as you can. Slice in half on an angle.
+
+It is a breakfast you can eat with one hand on the way out of the door, and the salt is what makes it taste like more than a snack.`;
+
+const breakfast3 = `Recipe 3: Avocado and tomato on rye
+Total time: 7 minutes. Serves 1.
+
+Ingredients: 2 slices of dark rye bread from the packet, half a ripe avocado, 1 small tomato, half a lime, a few chives or the green part of a spring onion, olive oil, salt, black pepper, chilli flakes.
+
+1. Scoop the avocado into a small bowl and crush it roughly with a fork. Squeeze in the lime, add a pinch of salt and mix; it should still have lumps.
+2. Slice the tomato thinly and snip the chives with scissors.
+3. Spread the avocado thickly over both slices of rye, lay the tomato on top and season with salt, pepper and a few chilli flakes.
+4. Scatter the chives, finish with a thread of olive oil, and eat with a knife and fork or folded in half.
+
+Dense rye is good cold and does not need warming; a softer bread would, so keep to rye or a firm sourdough here.`;
+
+const breakfast4 = `Recipe 4: Warm cinnamon apple oats
+Total time: 8 minutes. Serves 1.
+
+Ingredients: 40 g rolled oats, 200 ml milk (any kind), 1 small apple, half tsp ground cinnamon, 1 tsp brown sugar or maple syrup, a pinch of salt, 1 tbsp chopped almonds.
+
+1. Grate the apple on the coarse side of a grater, skin and all, straight into a small saucepan.
+2. Add the oats, milk, cinnamon, sugar and salt and stir once.
+3. Set the pan over medium heat and cook for 4 to 5 minutes, stirring now and then, until the oats are soft and the milk has thickened to a loose porridge. Add a splash more milk if it catches.
+4. Pour into a bowl, scatter the almonds over the top and let it sit for a minute before eating; it is hotter than it looks.
+
+Grating the apple instead of chopping it means it melts into the oats and you get apple in every spoonful.`;
+
+const breakfast5 = `Recipe 5: Mango and lime smoothie
+Total time: 5 minutes. Serves 1.
+
+Ingredients: 150 g frozen mango chunks, 1 small ripe banana, 150 ml cold milk or oat drink, 3 tbsp plain yoghurt, juice of half a lime, a thumb-sized piece of fresh ginger (optional), a small handful of ice.
+
+1. Put the mango, the banana broken into pieces, the milk, yoghurt and lime juice into a blender. Grate in the ginger if using.
+2. Blend for 30 seconds, stop, push anything stuck on the sides down with a spoon, add the ice and blend for another 30 seconds until completely smooth.
+3. Taste. More lime if it is flat, a splash more milk if it is too thick to drink through a straw.
+4. Pour into a tall glass and drink it cold; it separates if it stands, so give it a stir if it waits.
+
+Frozen mango is the trick: it gives the smoothie its cold, thick texture without watering it down with extra ice.`;
+
+const breakfast6 = `Recipe 6: Cottage cheese pot with cucumber and everything seasoning
+Total time: 6 minutes. Serves 1.
+
+Ingredients: 150 g cottage cheese, a 5 cm piece of cucumber, 4 cherry tomatoes, 1 tbsp everything bagel seasoning (or sesame seeds, dried onion, poppy seeds and salt mixed), a few leaves of dill or parsley, 4 crispbreads, olive oil, black pepper.
+
+1. Dice the cucumber small and halve the tomatoes.
+2. Spoon the cottage cheese into a bowl or a lidded pot, then pile the cucumber and tomatoes on top.
+3. Sprinkle the seasoning generously over everything, tear over the herbs, and add a little olive oil and pepper.
+4. Eat with the crispbreads, scooping the cheese onto them at the table so they stay crisp.
+
+Savoury, salty and filling, and it needs no more skill than opening a tub. Keep the seasoning jar at your desk and this becomes a lunch too.`;
+
+// ---- Pack 10: five freelance proposals. Template 3 names no delivery date. ----
+
+const PROPOSAL_PROMISES = [
+  "Every template names a price.",
+  "Every template names a delivery date.",
+  "No template leaves a placeholder like [NAME] unfilled.",
+];
+
+const proposal1 = `Template 1: Website redesign for a small studio
+Hi Elena,
+
+Thank you for walking me through the site on Tuesday. Here is the proposal in one page.
+
+What I will do: redesign the five pages we discussed (home, work, about, journal, contact), build them on your existing hosting, move the current journal posts across, and hand over a short guide so your team can update text and images without me.
+
+Price: USD 4,800, fixed. Half at the start, half on delivery. Hosting and domain stay in your name and are not part of the price.
+
+Delivery date: the finished site goes live on 14 November 2026, with a review round on 31 October where you see everything and ask for changes.
+
+If you are happy with this, reply "go" and I will send the first invoice and a kickoff time.
+
+Best,
+Nadia Ferreira`;
+
+const proposal2 = `Template 2: Logo and brand kit
+Hello Marcus,
+
+Here is the proposal for the coffee shop rebrand we talked about.
+
+What you get: three logo directions to choose from, then two rounds of refinement on the one you pick; final files in every format you will need (SVG, PNG, PDF, and a version for embroidery); a colour palette and two typefaces with licences; a six-page brand sheet showing how to use all of it on signage, boxes and the shop window.
+
+Price: USD 2,200, fixed. A third now, a third when you choose a direction, a third at handover.
+
+Delivery date: first directions on 16 October 2026, final files by 30 October 2026.
+
+Anything not on this list, such as menus or packaging, I will quote separately once the brand is settled, so you are not paying for guesses now.
+
+Kind regards,
+Nadia Ferreira`;
+
+const proposal3 = `Template 3: Monthly blog writing retainer
+Hi Priya,
+
+As promised, here is how the writing retainer would work.
+
+Each month I write four articles of 900 to 1,200 words on the topics we agree at the start of the month, each with a working title, a short summary for social posts and a suggested image brief. You get a draft, one round of edits, and the final copy pasted into your CMS as a draft ready to publish. Two of the four can be interviews with your customers if you introduce me to them.
+
+Price: USD 900 per month, invoiced on the first of the month, no minimum term; either of us can end it with one month's notice.
+
+The retainer starts as soon as you confirm and the first month's topics are agreed, and it rolls month to month from there.
+
+Best,
+Nadia Ferreira`;
+
+const proposal4 = `Template 4: Product photography day
+Hello Jonas,
+
+Thanks for sending the product list. Here is the proposal for the shoot.
+
+What is included: one full day of studio photography for up to 40 products, two setups (clean white background for the shop pages and a styled lifestyle set for the homepage and social), basic retouching on every selected image, and 120 final images delivered in web and print sizes with a licence for all your own channels.
+
+Price: USD 1,350, fixed, including the studio and props. Extra products on the day are USD 25 each.
+
+Delivery date: the shoot is on 3 November 2026 and the finished, retouched images are delivered by 10 November 2026 through a shared folder.
+
+Reply with a yes and I will book the studio; the date is held for you until Friday.
+
+Best regards,
+Nadia Ferreira`;
+
+const proposal5 = `Template 5: Data cleanup script
+Hi Sofia,
+
+Here is the proposal for the customer list cleanup we discussed.
+
+What I will build: a script that takes your exported spreadsheet, removes duplicate customers by matching email and phone (with the fuzzy matching we talked about for typos), standardises names and addresses, flags rows that need a human decision instead of guessing, and writes a clean file plus a short report of what changed. You get the script, a readme, and a recorded fifteen-minute walkthrough so your team can run it every quarter.
+
+Price: USD 1,600, fixed. Paid on delivery, once the script has run on your real export and you are satisfied with the result.
+
+Delivery date: 21 October 2026, with a first test run on your data on 17 October so we can adjust the rules before the final version.
+
+Thanks,
+Nadia Ferreira`;
+
+// ---- Pack 11: six meeting invitations, all promises kept. ----
+
+const INVITE_PROMISES = [
+  "Every invitation states a day, a start time and a length.",
+  "Every invitation says what to prepare, or says that nothing needs preparing.",
+  "Every invitation is under 150 words.",
+];
+
+const invite1 = `Template 1: Project kickoff
+Subject: Kickoff for the spring catalogue, Tuesday 10:00
+
+Hi all,
+
+We are starting the spring catalogue project and I would like everyone involved in one room once before the work splits up.
+
+When: Tuesday 6 October, 10:00 to 11:00 (one hour), room 3B and the usual video link.
+
+We will cover what we are making, who owns which part, the dates that cannot move, and how we will keep each other posted.
+
+To prepare: read the two-page brief attached and note any questions or anything you think is missing from it. Ten minutes is enough.
+
+If you cannot make it, tell me by Monday and I will send the notes.
+
+Thanks,
+Rosa`;
+
+const invite2 = `Template 2: Weekly one-to-one
+Subject: Our weekly one-to-one, Thursdays 14:00
+
+Hi Amir,
+
+I would like to set a regular time for the two of us, so you never have to ask for one.
+
+When: every Thursday from 14:00 to 14:30 (thirty minutes), starting 8 October, in my office or on a call if either of us is remote that day.
+
+It is your time first: what is going well, what is stuck, what you need from me. I will keep my own items to the last ten minutes.
+
+To prepare: nothing formal. If something is on your mind, jot it down so we do not forget it; if not, come as you are.
+
+If Thursday afternoons do not suit, say so and we will move it.
+
+Rosa`;
+
+const invite3 = `Template 3: Sprint retrospective
+Subject: Retrospective for sprint 14, Friday 15:00
+
+Hello team,
+
+Sprint 14 closes on Friday, so let us look back at it together before the next one starts.
+
+When: Friday 16 October, 15:00 to 16:00 (one hour), on the team video link.
+
+Format as usual: what went well, what did not, what we will change, and one action per person we can check on next time.
+
+To prepare: add your notes to the shared board under the three headings before Friday morning. Two or three honest lines each is better than a list of ten.
+
+Camera on if you can; it helps the quiet parts.
+
+Thanks,
+Rosa`;
+
+const invite4 = `Template 4: Client review
+Subject: Review of the first designs, Wednesday 11:00
+
+Dear Ms Okoro,
+
+The first designs for the packaging are ready, and I would like to walk you through them rather than send a file cold.
+
+When: Wednesday 21 October, 11:00 to 12:00 (one hour), at your office, or on video if that is easier for your team.
+
+I will show three directions, explain the thinking behind each, and then listen. We do not need a decision on the day.
+
+To prepare: nothing is needed from your side. If your colleagues from sales would like to join, they are welcome; the more eyes at this stage the fewer surprises later.
+
+Please confirm the time, and I will send a calendar invitation.
+
+Kind regards,
+Rosa Lindgren`;
+
+const invite5 = `Template 5: Decision meeting
+Subject: Decision on the vendor, Monday 9:30, 45 minutes
+
+Hi all,
+
+We have had the three vendor proposals for two weeks, and we need to choose one before the contract window closes.
+
+When: Monday 26 October, 9:30 to 10:15 (forty-five minutes), room 1A.
+
+This meeting is for deciding, not for reviewing. We will confirm the criteria, score each vendor on them together, and leave with a choice and a named person to send the reply.
+
+To prepare: read the one-page comparison attached and come with your score for each vendor on the five criteria. Please do this before the meeting, not during it, so we finish in the time.
+
+If you cannot attend, send me your scores by Friday and they will count.
+
+Rosa`;
+
+const invite6 = `Template 6: Rescheduling a meeting
+Subject: Moving Thursday's planning session to Friday
+
+Hi everyone,
+
+Two of the people we need cannot make Thursday, so I am moving the planning session rather than run it half empty.
+
+New time: Friday 30 October, 10:00 to 11:30 (ninety minutes), same room, same video link. The Thursday invitation has been removed from your calendars.
+
+The agenda does not change: the roadmap for the next quarter and who is on what.
+
+To prepare: the same as before. Look over the draft roadmap and note anything you would add, remove or move. If you already did this for Thursday, you are done.
+
+Sorry for the shuffle, and thank you for the flexibility.
+
+Rosa`;
+
+// ---- Pack 12: six physics cards. Card 5 has no worked example. ----
+
+const PHYSICS_PROMISES = [
+  "Every card ends with one worked example, labelled 'Worked example'.",
+  "Every card states at least one formula.",
+  "Every card is under 200 words.",
+];
+
+const physics1 = `Card 1: Newton's first law, inertia
+A body keeps its velocity, in both size and direction, unless a net force acts on it. At rest it stays at rest; moving, it keeps moving in a straight line at the same speed. The law is really a definition of what a force is: the thing that changes velocity. Formula: if the net force F = 0, then the acceleration a = 0 and velocity v is constant.
+
+The common mistake is to think a moving object needs a force to keep it moving. It does not; it needs a force to stop it, and on Earth that force is usually friction or air resistance, which is why things seem to slow down on their own.
+
+Worked example: a hockey puck slides across smooth ice at 4 m/s. Ignoring friction, what is its speed after 10 seconds? No net force acts along the ice, so the acceleration is zero and the speed is still 4 m/s.`;
+
+const physics2 = `Card 2: Newton's second law, F = ma
+The net force on a body equals its mass times its acceleration: F = ma, with F in newtons (N), m in kilograms and a in metres per second squared. The acceleration points the same way as the net force. Double the force and the acceleration doubles; double the mass and it halves.
+
+Two things to remember. First, it is the net force: add up every force as a vector before dividing by the mass. Second, the law says nothing about velocity, only about how velocity changes, so a body can have a large velocity and zero acceleration, or zero velocity and a large acceleration (a ball at the top of its throw).
+
+Worked example: a 1,200 kg car accelerates from rest to 20 m/s in 8 seconds. Acceleration a = 20 / 8 = 2.5 m/s². Net force F = 1,200 × 2.5 = 3,000 N.`;
+
+const physics3 = `Card 3: Newton's third law, action and reaction
+When body A pushes on body B, body B pushes back on body A with a force of the same size in the opposite direction. Formula: F(A on B) = −F(B on A). The two forces are always on different bodies, which is why they never cancel: cancelling only happens between forces on the same body.
+
+This is the law students misuse most. If the forces are equal and opposite, why does anything move? Because to find whether A moves you add up the forces on A alone; the force A exerts on B is not one of them.
+
+Worked example: a rower pushes backward on the water with an oar with a force of 150 N. What force does the water exert on the oar, and which way? 150 N, forward; that is the force that moves the boat.`;
+
+const physics4 = `Card 4: Weight and mass
+Mass is the amount of matter in a body, measured in kilograms, and it is the same everywhere. Weight is the force of gravity on that mass, measured in newtons, and it depends on where you are. Formula: W = mg, where g is the gravitational field strength, about 9.8 N/kg on the surface of the Earth and about 1.6 N/kg on the Moon.
+
+In everyday speech people say "weighs 70 kg", but in physics that is a mass; the weight of that person is about 690 N on Earth. When a question gives you a mass and asks about a force, weight is usually the first force to write down.
+
+Worked example: a 12 kg suitcase. Weight on Earth: W = 12 × 9.8 = 117.6 N, or about 118 N. Weight on the Moon: W = 12 × 1.6 = 19.2 N. Its mass on the Moon is still 12 kg.`;
+
+const physics5 = `Card 5: Friction
+Friction is the force between two surfaces in contact that resists their sliding across each other. It acts parallel to the surfaces and against the direction of motion, or against the direction the body would move if there were no friction. There are two kinds: static friction, which stops a body from starting to slide, and kinetic friction, which acts once it is already sliding. Static friction is usually the larger of the two, which is why it is harder to start pushing a heavy box than to keep it moving.
+
+Formula: the maximum friction force is F = μN, where N is the normal force pressing the surfaces together and μ (mu) is the coefficient of friction, a number with no units that depends on the two materials. Rubber on dry road is about 0.7; steel on ice is about 0.03. Notice the formula has no area in it: a wide tyre does not grip better because of its width alone.
+
+Static friction is not always at its maximum. It takes whatever value is needed to stop the slide, up to μN; only when the push exceeds that does the body move.`;
+
+const physics6 = `Card 6: Momentum and impulse
+Momentum is mass times velocity: p = mv, measured in kg·m/s, and it is a vector, so direction matters. Newton's second law in its original form says that the net force equals the rate of change of momentum, F = Δp / Δt. Rearranged, FΔt = Δp: the product of force and the time it acts, called the impulse, equals the change in momentum.
+
+This is why airbags and crumple zones work. The change in momentum in a crash is fixed by how fast you were going; the impulse is fixed too. Spread it over a longer time and the force goes down in proportion.
+
+Worked example: a 0.16 kg cricket ball arrives at 30 m/s and is caught, coming to rest in 0.05 s. Change in momentum Δp = 0.16 × 30 = 4.8 kg·m/s. Average force on the hands F = 4.8 / 0.05 = 96 N. Let the hands give way over 0.2 s and the force falls to 24 N.`;
+
+// ---- Pack 13: eight Spanish irregular verb cards, all promises kept. ----
+
+const SPANISH_PROMISES = [
+  "Every card conjugates the present tense for all six persons: yo, tú, él/ella, nosotros, vosotros, ellos.",
+  "Every card gives one example sentence with its English translation.",
+  "Every card is under 150 words.",
+];
+
+const spanish1 = `Card 1: ser (to be, for what something is)
+Present tense:
+yo soy
+tú eres
+él / ella / usted es
+nosotros somos
+vosotros sois
+ellos / ellas / ustedes son
+
+Use ser for identity, origin, profession, time and the qualities that define something: what a thing is, rather than how it happens to be right now. It is the most irregular verb in the language and shares no stem with its infinitive, so learn the six forms as a chant: soy, eres, es, somos, sois, son.
+
+Example: Mi hermana es médica y nosotros somos de Valencia. My sister is a doctor and we are from Valencia.`;
+
+const spanish2 = `Card 2: estar (to be, for states and places)
+Present tense:
+yo estoy
+tú estás
+él / ella / usted está
+nosotros estamos
+vosotros estáis
+ellos / ellas / ustedes están
+
+Use estar for where something is and for temporary states: moods, health, weather that is happening, and the results of a change. The first person and the accents are the irregular parts; the rest follows the regular -ar pattern once you know where the stress falls. The same adjective can change meaning: es aburrido, he is boring; está aburrido, he is bored.
+
+Example: Estoy cansada porque los niños están enfermos. I am tired because the children are ill.`;
+
+const spanish3 = `Card 3: ir (to go)
+Present tense:
+yo voy
+tú vas
+él / ella / usted va
+nosotros vamos
+vosotros vais
+ellos / ellas / ustedes van
+
+Ir looks nothing like its infinitive in the present: all six forms begin with v. It is always followed by a when it means going somewhere (voy a casa) and ir a plus an infinitive is the everyday future: voy a comer, I am going to eat. Vamos on its own means "let's go" or "come on".
+
+Example: Los sábados vamos al mercado y después vais vosotros al cine. On Saturdays we go to the market and afterwards you lot go to the cinema.`;
+
+const spanish4 = `Card 4: tener (to have)
+Present tense:
+yo tengo
+tú tienes
+él / ella / usted tiene
+nosotros tenemos
+vosotros tenéis
+ellos / ellas / ustedes tienen
+
+Two irregularities in one verb: the yo form takes a g (tengo), and the e in the stem becomes ie in every form except nosotros and vosotros, which keep the plain stem. Tener carries a lot of phrases where English uses "to be": tener hambre, to be hungry; tener frío, to be cold; tener veinte años, to be twenty. Tener que plus infinitive means "to have to".
+
+Example: Tengo que salir pronto porque mis padres tienen visita esta noche. I have to leave soon because my parents have visitors tonight.`;
+
+const spanish5 = `Card 5: hacer (to do, to make)
+Present tense:
+yo hago
+tú haces
+él / ella / usted hace
+nosotros hacemos
+vosotros hacéis
+ellos / ellas / ustedes hacen
+
+Only the yo form is irregular in the present: hago. Everything else is a regular -er verb. Hacer covers both "do" and "make", and it appears in weather (hace frío, hace sol, it is cold, it is sunny) and in time expressions: hace dos años, two years ago. ¿Qué haces? is the everyday "what are you doing?" or "what do you do?".
+
+Example: Hago la cena mientras tú haces los deberes, y hace mucho calor en la cocina. I make dinner while you do your homework, and it is very hot in the kitchen.`;
+
+const spanish6 = `Card 6: poder (to be able to, can)
+Present tense:
+yo puedo
+tú puedes
+él / ella / usted puede
+nosotros podemos
+vosotros podéis
+ellos / ellas / ustedes pueden
+
+A stem-changing verb: o becomes ue in every form except nosotros and vosotros. Picture the pattern as a boot drawn around the four changed forms on the left and bottom right. Poder is followed straight by an infinitive with no preposition: puedo nadar, I can swim. ¿Puedes ayudarme? is the polite everyday "can you help me?". No puedo más means "I can't take any more".
+
+Example: No podemos venir el lunes, pero puedes llamarnos el martes. We cannot come on Monday, but you can call us on Tuesday.`;
+
+const spanish7 = `Card 7: querer (to want, to love)
+Present tense:
+yo quiero
+tú quieres
+él / ella / usted quiere
+nosotros queremos
+vosotros queréis
+ellos / ellas / ustedes quieren
+
+Another boot verb: e becomes ie except in nosotros and vosotros. Querer means "to want" with a thing or an infinitive (quiero un café, quiero dormir) and "to love" with a person: te quiero is the everyday "I love you", softer than te amo. Quisiera, from the past subjunctive, is the polite "I would like" in shops and restaurants.
+
+Example: Quieren ir a la playa, pero yo quiero quedarme en casa. They want to go to the beach, but I want to stay at home.`;
+
+const spanish8 = `Card 8: decir (to say, to tell)
+Present tense:
+yo digo
+tú dices
+él / ella / usted dice
+nosotros decimos
+vosotros decís
+ellos / ellas / ustedes dicen
+
+Decir combines two irregularities: the yo form takes a g (digo) and the e in the stem becomes i in the boot forms; nosotros and vosotros keep the plain stem, and note that vosotros is decís with a single accented i. It is followed by que when reporting speech: dice que viene, she says she is coming. ¿Cómo se dice ... en español? is the question every learner needs.
+
+Example: Siempre dices que vienes y luego dicen tus amigos que no te han visto. You always say you are coming and then your friends say they have not seen you.`;
+
+// ---- Pack 14: eight journal prompts for a hard week. Prompt 5 is an instruction, not a question. ----
+
+const JOURNAL_PROMISES = [
+  "Every prompt is a question and ends with a question mark.",
+  "Every prompt is a single paragraph.",
+  "No prompt is longer than 120 words.",
+];
+
+const journal1 = `Prompt 1: The smallest good thing
+When you look back over the last seven days, what is the smallest thing that went right, so small you almost did not count it: a cup of coffee that was exactly hot enough, a message answered, a bus that came on time? Where were you when it happened, and what did your body do in that moment, the shoulders, the breath, the jaw? If you had to keep one of those small moments in your pocket for the rest of the week, which would you choose, and why that one and not the others?`;
+
+const journal2 = `Prompt 2: What you are carrying
+If everything you are worried about right now were an object you had to carry in your two hands, what would be in the left hand and what in the right, and which of the two is heavier? Which of those things did you pick up yourself, and which was handed to you by someone else without asking? Is there one you could set down on the table for the length of this page, just to see what your hands feel like empty, and what would happen if you did not pick it back up?`;
+
+const journal3 = `Prompt 3: The sentence you keep saying
+What is the sentence you have said to yourself most often this week, the one that runs under everything, and would you say it out loud to a friend who was going through the same week? If that friend said it about themselves, what would you want to answer, and could you write that answer down here in your own words, addressed to yourself? What changes in the sentence if you add the word "today" to the end of it?`;
+
+const journal4 = `Prompt 4: Who noticed
+Who noticed something about you this week, even a small thing: that you were quiet, that you looked tired, that you did a good job of something you thought nobody saw? What did they say or do, and what did you do with it, brush it off, argue with it, keep it? If nobody noticed, who would you have wanted to, and is there a way to tell that person one true sentence about this week before it is over?`;
+
+const journal5 = `Prompt 5: Three lines for tomorrow
+Write three lines for tomorrow, and make them the smallest lines you can. Write one thing you will do before noon that takes less than ten minutes. Write one person you will send a single message to, and put their name down now so it is decided. Write one thing you will not do tomorrow, one job you are giving yourself permission to leave until the week is kinder. Then close the book and do not read the three lines again until the morning.`;
+
+const journal6 = `Prompt 6: The version of you that got through
+Think of another hard week you have had, one that ended, because it did end; what did the version of you in that week know how to do that got you through it, and what did you do the day after it was over? Is any of that available to you now, even a smaller version of it? If that earlier you could see you this week, what is the one thing they would be least surprised by, and the one thing they would be proudest of?`;
+
+const journal7 = `Prompt 7: What would be enough
+If the rest of this week could not be good, only survivable, what would "survivable" actually look like on Friday evening: where would you be, what would be done and what left undone, and who would be with you? Which of those things are already true or nearly true? What is the one thing on the list that is really in your hands, and what would it take to do just that one and let the rest of the week be whatever it is going to be?`;
+
+const journal8 = `Prompt 8: Next week's first hour
+When you wake up on the first morning of next week, what is the very first hour going to be, minute by minute, if you decide it now instead of letting it decide you: what do you drink, what do you look at, what do you not look at? Is there one thing from this week you want to leave outside that first hour altogether? Who do you want to be for those sixty minutes, and does that person need anything from you tonight to make the hour possible?`;
+
+// ---- Pack 15: seven interview prompts for hiring a designer, all promises kept. ----
+
+const INTERVIEW_PROMISES = [
+  "Every question is open-ended: it cannot be answered with a yes or a no.",
+  "Every prompt says what a strong answer includes.",
+  "No prompt is longer than 150 words.",
+];
+
+const interview1 = `Prompt 1: The project that changed your mind
+Question: Tell me about a project where you started with one design direction and ended up shipping something quite different. What changed, and how did you find out you were wrong?
+
+A strong answer includes: a specific project, not a general habit; the evidence that changed their mind (a test, a conversation, a metric, a constraint they had missed); how far into the work the change came and what it cost; and what they now do earlier to catch the same thing sooner. Watch for candidates who describe the change as entirely somebody else's fault, or who cannot name a single project where they were wrong.`;
+
+const interview2 = `Prompt 2: Working with an engineer who says no
+Question: Describe a time an engineer told you a design could not be built, or not in the time available. How did the conversation go, and what shipped in the end?
+
+A strong answer includes: curiosity about the technical reason rather than a fight over the mockup; a design that was adjusted with the engineer rather than handed back; a sense of what was essential in the design and what was decoration; and a real outcome. The best candidates can explain the technical constraint in their own words, which shows they listened. Be wary of stories where the designer simply escalated to a manager and won.`;
+
+const interview3 = `Prompt 3: Explaining a decision to someone who disagrees
+Question: Walk me through a design decision that a stakeholder disagreed with. How did you explain your reasoning, and how did it end?
+
+A strong answer includes: the actual decision and the actual objection, in plain terms; the reasoning offered, which should point to users, data or a stated goal rather than to taste; a willingness to be persuaded if the objection was good; and a clear ending, whether the design held, changed, or was tested to settle it. Candidates who describe every disagreement ending in their favour are either lucky or editing the story; ask for one that went the other way.`;
+
+const interview4 = `Prompt 4: Designing without research
+Question: Tell me about a time you had to design something with almost no user research available. What did you do to reduce the risk, and what would you have done with one more week?
+
+A strong answer includes: honest acknowledgement of the gap rather than pretending intuition was enough; cheap substitutes they reached for (support tickets, analytics, five quick conversations, a competitor's public patterns, an assumptions list); how they built the design so it could be corrected after launch; and a concrete answer to the one-more-week question that names a method and who they would have talked to. The weak answer is "I just used best practices".`;
+
+const interview5 = `Prompt 5: Feedback you found hard to hear
+Question: What is a piece of critique on your work that was hard to hear but turned out to be right? What did you do with it?
+
+A strong answer includes: a real example with enough detail to be believable, a description of the first reaction that is honest about being defensive, and a specific change to the work or to how they work since. Listen for whether they can separate the sting from the substance. Candidates who cannot think of any critique that was right, or who only offer examples where the critic was mistaken, will be hard to give feedback to on the job.`;
+
+const interview6 = `Prompt 6: The state of our product
+Question: You have had a look at our product before today. Walk me through three things you would want to understand better before proposing any change, and one thing you would be tempted to change on day one.
+
+A strong answer includes: evidence they actually looked, with details from real screens; questions about users, goals or constraints rather than only visual notes; a day-one change that is small, defensible and explained in terms of a user, not taste; and some humility about proposing changes from the outside. Bold opinions are fine; bold opinions with no curiosity are the warning sign.`;
+
+const interview7 = `Prompt 7: How you want to work here
+Question: Describe the working week in which you do your best work: how you split time between making, talking and reviewing, how much direction you want, and what a manager can do that helps most and hurts most.
+
+A strong answer includes: a concrete picture rather than "I am flexible"; awareness of their own needs for focus time and feedback; an honest account of what has hurt them before (micromanagement, silence, moving targets) without bitterness; and questions back about how the team actually works. This is as much a question for you as for them; if their best week cannot exist here, better to find out now.`;
+
+// ---- Pack 16: six houseplants. Plant 4 never says how often to water. ----
+
+const PLANT_PROMISES = [
+  "Every plant states how often to water it.",
+  "Every plant states the light it needs.",
+  "Every plant names one sign that it is getting too much water.",
+];
+
+const plant1 = `Plant 1: Pothos (Epipremnum aureum)
+The plant to start with. It trails, it climbs, it grows in almost any room, and it forgives most mistakes.
+
+Light: bright, indirect light is best; it tolerates a dim corner but the leaves lose their gold marbling and turn plain green. Keep it out of hot direct sun, which scorches the leaves.
+
+Water: once every 7 to 10 days in the growing season, letting the top few centimetres of soil dry out between waterings; every two weeks in winter. It would rather be a little dry than a little wet.
+
+Too much water: the leaves turn yellow from the base of the plant upward and feel soft, and the stems near the soil go dark and mushy. If that happens, let it dry out fully and cut away anything black.
+
+Feeding: a half-strength liquid feed once a month from spring to early autumn. Trim the vines back whenever they get leggy; the cuttings root in a glass of water in two weeks.`;
+
+const plant2 = `Plant 2: Snake plant (Dracaena trifasciata)
+Stiff upright leaves like green swords, banded in grey with yellow edges. It is close to indestructible and grows slowly, so buy it the size you want it.
+
+Light: anything from a bright window to a shady hallway. More light means faster growth and stronger colour; low light means it simply sits still, which is fine.
+
+Water: once every 3 to 4 weeks, and only when the soil is fully dry all the way down the pot; in winter once every 6 weeks is plenty. This is the plant people kill with kindness.
+
+Too much water: the leaves go soft and wrinkled at the base and fold over, and the base of the plant turns brown and smells sour. Rot moves fast in a snake plant, so if a leaf feels soft, unpot it and check the roots.
+
+Feeding: barely needed; a weak feed twice a summer. Use a free-draining, gritty mix and a pot with a hole; a heavy pot helps, as tall plants tip.`;
+
+const plant3 = `Plant 3: Monstera (Monstera deliciosa)
+The big split-leaf plant. New leaves unfurl whole and develop their holes as the plant matures; a young one with no splits is not unhealthy, just young.
+
+Light: bright, indirect light, close to a window but not in the sun's direct path for more than an hour or two. In poor light the leaves stay small and never split.
+
+Water: once a week in spring and summer, when the top third of the soil has dried; every 10 to 14 days in winter. It likes a good soak and then to be left alone.
+
+Too much water: leaves develop yellow patches and brown, wet-looking spots, often with a yellow ring, and the soil stays dark and smells musty days after watering.
+
+Feeding: a balanced liquid feed every two weeks in the growing season. Give it a moss pole or a stake early; the aerial roots will grip it and the plant grows upward instead of sprawling across the floor. Wipe the big leaves now and then so they can breathe.`;
+
+const plant4 = `Plant 4: Peace lily (Spathiphyllum)
+Glossy dark leaves and white flowers that stand up on their own stems like flags. It is one of the few flowering plants that does well indoors in ordinary rooms.
+
+Light: medium to low indirect light. It is one of the best plants for a room with a north-facing window or a spot a few metres from any window. Direct sun scorches the leaves and fades the flowers; if the leaves go pale and streaky, move it further from the glass.
+
+Too much water: the leaf tips and edges turn brown and crisp while the stems at the base go limp and dark, and the flowers brown early. A peace lily that is drooping in soaked soil is rotting, not thirsty; let it dry out and check for mushy roots.
+
+Feeding: a half-strength liquid feed every six weeks from spring to autumn; overfeeding causes brown tips too. It flowers best when slightly pot-bound, so do not rush to repot. Keep it away from cold draughts, and wipe the leaves with a damp cloth every few weeks; they collect dust fast.`;
+
+const plant5 = `Plant 5: Spider plant (Chlorophytum comosum)
+Arching striped leaves and, in a happy plant, long stems carrying baby plants that dangle over the edge of the pot. Cheerful and easy, and good in a hanging basket.
+
+Light: bright, indirect light. It manages in less, but it will not produce babies without a good amount of light. Direct afternoon sun bleaches the stripes.
+
+Water: once a week, when the top of the soil has dried out; every 10 days in winter. It stores water in its thick roots and so copes with the odd missed week.
+
+Too much water: the leaves turn yellow from the centre of the plant outward, feel limp rather than crisp, and the centre of the plant goes brown and soft. Brown tips on otherwise healthy leaves are usually a different problem: fluoride in tap water, cured by using rainwater or filtered water.
+
+Feeding: a weak feed every two weeks in spring and summer. Snip off the babies once they have a few roots of their own and pot them up; they make the easiest gifts.`;
+
+const plant6 = `Plant 6: ZZ plant (Zamioculcas zamiifolia)
+Glossy, almost plastic-looking leaflets on thick arching stems that grow from fat tubers under the soil. It grows slowly and asks for almost nothing.
+
+Light: low to bright indirect light; it is one of the very few plants that stays healthy in an office lit only by ceiling lights. Keep it out of direct sun, which yellows the leaves.
+
+Water: once every 2 to 3 weeks in summer, once a month in winter, and only when the soil is dry right through. The tubers hold water for weeks at a time; when unsure, wait.
+
+Too much water: the stems go yellow and then soft at the base, leaflets drop while still green, and the tubers turn brown and mushy when you unpot it. Overwatering is nearly the only way to lose this plant.
+
+Feeding: a half-strength feed two or three times over the summer. Repot only every two or three years; the tubers can push a plastic pot out of shape when they are ready. The sap can irritate skin, so wash your hands after handling broken stems.`;
+
+// ---- Pack 17: a weekend in Kyoto, six stops, all promises kept. ----
+
+const KYOTO_PROMISES = [
+  "Every stop lists an opening time.",
+  "Every stop says how to get there from the previous one and how long it takes.",
+  "No stop is a shopping mall.",
+];
+
+const kyoto1 = `Stop 1: Fushimi Inari Taisha, open 24 hours (the shrine grounds)
+Start here, early, on Saturday. The shrine is famous for the thousands of vermilion torii gates that form tunnels up the wooded hillside behind the main buildings, and the only way to see them without a crowd in every photograph is to arrive by seven in the morning. The main shrine sits at the foot of the hill; walk through it, past the fox statues with keys and scrolls in their mouths, and start up the path. The full loop to the summit and back takes about two hours and is a proper climb, but the character of the place changes after the first twenty minutes, when most visitors turn back: the gates thin out, the forest closes in, and small shrines with stone foxes appear at every bend. Turn back at the Yotsutsuji crossing, halfway up, if you want the view of the city without the whole loop. The shrine grounds never close and there is no ticket.`;
+
+const kyoto2 = `Stop 2: Kiyomizu-dera, 6:00 to 18:00 (later during the seasonal night openings)
+Train: 15 minutes. From Inari station take the JR Nara line two stops to Kyoto, change to the Keihan line at Tofukuji or take bus 206 from Kyoto station to Gojo-zaka, then walk 10 minutes up the hill.
+The temple stands on a wooden stage built out over the hillside on tall pillars without a single nail, and the view from the stage over the maples to the city is the picture every guide uses. Go through the main hall, then follow the path down to the Otowa waterfall, where three streams pour into a stone basin and visitors drink from long-handled cups; each stream is said to grant a different wish, and drinking from all three is considered greedy. The lanes below the temple, Sannenzaka and Ninenzaka, are the preserved old streets of stepped stone and wooden shopfronts, and the walk down through them to Gion is the pleasant way to leave.`;
+
+const kyoto3 = `Stop 3: Nishiki Market, 10:00 to 18:00 (most stalls; a few open earlier)
+Walk: 30 minutes. From the bottom of Ninenzaka head west along Shijo-dori, cross the river at the Shijo bridge and continue past the covered Teramachi arcade; the market is the narrow covered street one block north, running parallel to Shijo.
+Five blocks long and barely wider than a corridor, the market has fed the city's kitchens for four hundred years. Some hundred and thirty stalls sell pickles, dried seaweed, tofu, knives, tea, sweets and skewers of things you have not seen before, and most will hand you a taste. It is a market, not a mall: single family stalls, no chains, no roof beyond the coloured glass canopy. Come hungry and graze: a skewer of grilled octopus with a quail egg in its head, a cup of soy milk doughnuts, a slice of tamagoyaki. Eat at the stall where you bought it, as walking while eating is frowned on here. The stalls close early, so make this the late morning of Saturday, not the afternoon.`;
+
+const kyoto4 = `Stop 4: Arashiyama bamboo grove and Tenryu-ji, grove open 24 hours, temple 8:30 to 17:00
+Train: 25 minutes. From the market walk 5 minutes to Karasuma station and take the Hankyu line to Katsura, change for Arashiyama; or take the JR Sagano line from Kyoto station to Saga-Arashiyama, 15 minutes, and walk 10 minutes.
+Start Sunday here, again early. The bamboo path is a few hundred metres of towering green stems that close over the path and creak in the wind; by ten it is a slow queue of people, at eight it is close to silent. Walk it, then enter Tenryu-ji from the north gate at the grove's end. The temple garden, laid out in the fourteenth century around a pond with the hills as its backdrop, is one of the oldest in the country and the reason the temple matters more than its buildings. Sit on the veranda of the main hall and look at it for ten minutes. Leave through the main gate onto the street of shops and cross the Togetsukyo bridge for the view back to the hills.`;
+
+const kyoto5 = `Stop 5: Kinkaku-ji, the Golden Pavilion, 9:00 to 17:00
+Bus: 35 minutes. From Arashiyama take the Randen tram to Kitano-Hakubaicho, 20 minutes, then bus 204 or 205 north for 10 minutes to the Kinkakuji-michi stop, and walk 5 minutes.
+The pavilion is exactly what the postcards show: a three-storey building, its upper two floors covered in gold leaf, standing at the edge of a pond that reflects it. The present building is a 1955 reconstruction after a fire, and it does not pretend otherwise. The route through the grounds is a single path: it brings you to the classic view across the pond first, then around behind the pavilion, past the smaller garden features and a tea house, to the exit. It takes about forty minutes and there is no going back against the flow, so take the photograph when you are at the pond. Arrive at opening or after three in the afternoon to avoid the tour buses. The tea house near the exit serves matcha and a sweet for a small fee, and it is worth the ten minutes.`;
+
+const kyoto6 = `Stop 6: Gion and Yasaka Shrine, shrine grounds open 24 hours
+Bus: 40 minutes. From the Kinkakuji-michi stop take bus 12 or 59 south and east to Gion; it stops on Shijo-dori right in front of the shrine's orange gate.
+End the weekend where the city's evening begins. Yasaka Shrine sits at the eastern end of Shijo-dori, with a dance stage hung with hundreds of paper lanterns that are lit at dusk, and it is open all night. Walk through its grounds into Maruyama Park behind it, then come back out and turn into Hanami-koji, the street of wooden teahouses that is the heart of Gion. Around six the lanterns come on outside the teahouses and, if you are lucky and discreet, a geiko or maiko will pass on her way to an engagement; do not block the street or follow her. Finish with a walk along Shirakawa, the small canal a few streets north, where willows hang over the water and the restaurants have their lights on. Dinner at one of them is the right last thing to do.`;
+
+// ---- Pack 18: rules for a two-player card game, all promises kept. ----
+
+const GAME_PROMISES = [
+  "Every rule is under 120 words.",
+  "No rule needs anything beyond one standard 52-card deck and two players.",
+  "No rule mentions money or betting.",
+];
+
+const game1 = `Rule 1: The aim and what you need
+Bridgeway is a game for two players with one standard 52-card deck, jokers removed. The players build a single row of cards, the bridge, one card at a time, and the aim in each round is to be the first to play every card from your hand onto it. A game is three rounds. The cards you are left holding when a round ends count against you, and the player with the lower total after three rounds wins. Nothing else is needed: no board, no counters, no pen, though you may keep score on paper if you prefer not to remember it.`;
+
+const game2 = `Rule 2: Setting up a round
+Shuffle the whole deck and deal seven cards to each player, one at a time, face down. Place the rest of the deck face down between the players as the draw pile. Turn the top card of the draw pile face up and lay it in the middle of the table: it is the first card of the bridge. If that first card is an ace, put it back in the middle of the draw pile and turn the next card instead. The player who did not deal takes the first turn. In the second and third rounds, the deal passes to the other player.`;
+
+const game3 = `Rule 3: Your turn
+On your turn you must do one of two things. Either play one card from your hand onto either end of the bridge, or draw one card from the draw pile into your hand. A card may be played only if its rank is exactly one higher or one lower than the card at the end you are adding it to. Suits do not matter. So a 7 may go next to a 6 or an 8, at either end. After playing a card or drawing one, your turn is over and your opponent takes theirs. You may not play more than one card in a turn.`;
+
+const game4 = `Rule 4: Aces and the ends of the ranks
+Ranks run from 2 up to king, and the ace joins the two ends together. An ace may be played next to a king or next to a 2, and either a king or a 2 may be played next to an ace. So a bridge can read queen, king, ace, 2, 3, or the other way round. An ace may not be played next to any other rank. This is the only special card in the game. All other cards, including picture cards, follow the plain rule of one rank up or one rank down.`;
+
+const game5 = `Rule 5: When the draw pile runs out
+If the draw pile is empty when you would otherwise draw, you may instead pass without playing. If both players pass one after the other, the bridge is stuck: pick up all of it except the two end cards, shuffle those picked-up cards, and place them face down as a new draw pile. The two end cards stay on the table and become the whole bridge. Play continues with the player who passed second. If the draw pile runs out again and both players pass again, the round ends at once and both hands are scored.`;
+
+const game6 = `Rule 6: Ending a round and scoring
+A round ends the moment one player plays the last card from their hand, or when the round is ended under rule 5. Each player then counts the cards still in their hand: number cards count their face value, jack, queen and king count 10 each, and an ace counts 15. The player who emptied their hand scores 0 for the round. Write down or remember each player's total. Then gather every card, shuffle, and deal the next round. Scores carry over from round to round; nothing is reset until the game is over.`;
+
+const game7 = `Rule 7: Winning the game
+After three rounds, add up each player's three round totals. The player with the lower total wins the game. If the totals are equal, play one more round as a decider, and the player with the lower score in that round alone wins. Agreed variations for a longer evening: play five rounds instead of three, or deal nine cards each instead of seven. Whatever you agree, agree it before the first round is dealt, and keep it for the whole game. Shake hands afterwards; it is a small game, and it should end well.`;
+
+// ---- Pack 19: eight rules for commit messages. Rule 6 has no example. ----
+
+const COMMIT_PROMISES = [
+  "Every rule has an example, on a line that starts with 'Example:'.",
+  "Every rule is under 150 words.",
+];
+
+const commit1 = `Rule 1: Say what changed, in the imperative
+The subject line should complete the sentence "if applied, this commit will ...". Use the imperative: add, fix, remove, rename. Not "added", not "adding", not "fixes". The habit matches the messages the tools themselves write (merge branch, revert commit) and it reads as an instruction, which is what a commit is: a change you are asking the codebase to accept.
+
+Example:
+  Add retry to the upload client
+  Remove the unused legacy parser
+  Rename Customer.mail to Customer.email
+
+Compare "Fixed some stuff in uploads", which tells the reader nothing about what changed, only that the author was there.`;
+
+const commit2 = `Rule 2: Keep the subject line to 50 characters
+Fifty characters is what fits in a log view, a pull request list and a blame column without being cut off. It also forces you to say the one thing this commit does; if you cannot fit it, the commit is probably doing two things. Capitalise the first word and do not end with a full stop; it is a title, not a sentence.
+
+Example:
+  Cache the price feed for thirty seconds
+
+Too long:
+  Cache the price feed for thirty seconds so that the dashboard stops hammering the oracle during peak hours
+
+The second version is right, but it belongs in the body, not the subject.`;
+
+const commit3 = `Rule 3: Separate the subject from the body with a blank line
+Tools treat the first line as the subject and everything after the first blank line as the body. Without the blank line, the whole message becomes one long subject, and every log view shows the first eighty characters of a paragraph. The body is optional; the blank line, when there is a body, is not.
+
+Example:
+  Fix the timezone bug in the invoice date
+
+  Invoices created after 22:00 local time were dated the next day
+  because the server stored the date in UTC and the template
+  formatted it without converting back.
+
+The subject is what most readers see; the body is for the one reader who needs to know more.`;
+
+const commit4 = `Rule 4: Explain why, not how
+The diff already shows how the code changed. What the diff cannot show is why: the bug report, the constraint, the alternative you rejected, the thing that was tried first and failed. That is what the body is for. A reader six months from now, wondering whether a strange line is safe to remove, is looking for exactly this and nowhere else.
+
+Example:
+  Retry the upload three times before failing
+
+  The storage provider drops roughly one request in two hundred
+  with a 503 that succeeds on the next attempt. Three retries with
+  a short backoff removes the failures we saw in the last week
+  without hiding a real outage, which shows up as three failures.`;
+
+const commit5 = `Rule 5: One change per commit
+A commit that fixes a bug, reformats a file and renames a variable is three commits pretending to be one. It cannot be reviewed cleanly, it cannot be reverted without losing the parts you wanted to keep, and its message has to lie by omission. Split it. Formatting goes in its own commit, with a message that says so, so the reader can skip it.
+
+Example:
+  Reformat payments.py with the project formatter
+
+  No behaviour change; the next commit fixes the rounding bug and
+  is easier to read against a clean file.
+
+Then the real fix follows, and its diff is only the fix.`;
+
+const commit6 = `Rule 6: Reference the issue, but do not rely on it
+Put the ticket or issue number in the body, on its own line at the end, so the tracker can link the two and the reader can find the discussion. But write the message as if the tracker might disappear, because trackers do: projects move systems, tickets get archived, links rot. A message that says only "Fixes #4521" is a promise that the reader can look it up, and one day they will not be able to. Say what the problem was in the message itself, then add the reference underneath. The number is a pointer; the message is the record.`;
+
+const commit7 = `Rule 7: Wrap the body at 72 characters
+Terminal log viewers indent the body by four spaces and do not wrap it, so lines longer than about 76 characters run off the edge or wrap mid-word. Wrapping at 72 keeps the message readable everywhere it will be shown, including in email, which is where the convention comes from. Most editors do this for you when told the file is a commit message.
+
+Example:
+  Drop the nightly rebuild of the search index
+
+  The index is now updated on every write, so the rebuild has been
+  doing nothing but load the database for an hour each night since
+  the change in March. Removing it also removes the only cron job
+  that still needed the old credentials.`;
+
+const commit8 = `Rule 8: Write the message before you are tired of the change
+The best time to write the message is when you still remember why you made the change and what surprised you, which is usually before the code review starts, not after the fifth round of it. Write it early, keep it in the draft, and update it if the approach changes. A message written at midnight after a long review tends to say "address review comments", which is the least useful sentence a history can contain.
+
+Example:
+  Validate the callback URL before storing it
+
+  The form accepted any string, and one customer saved a URL with
+  a trailing space that failed every webhook silently. Now the URL
+  is parsed on save and the form shows the problem straight away.`;
+
 export const DEMO_PACKS: DemoPack[] = [
   {
     title: "Weeknight Vegetarian, 8 recipes",
@@ -554,14 +1291,14 @@ export const DEMO_PACKS: DemoPack[] = [
     hint: "One prompt breaks promise P2: it is not a single paragraph. Every prompt names its setting and character and stays under 120 words, so a dispute on P1 or P3 will lose.",
   },
   {
-    title: "A first day in Tehran, 6 stops",
+    title: "A first day in Lisbon, 6 stops",
     kind: "guide",
-    promises: TEHRAN_PROMISES,
+    promises: LISBON_PROMISES,
     sections: [stop1, stop2, stop3, stop4, stop5, stop6],
     priceGen: "1.5",
     windowSeconds: 2 * 86400,
-    note: "A walking day from Golestan Palace to Cafe Naderi; stop 4 has no opening time, breaking promise 1.",
-    hint: "One stop breaks promise P1: it lists no opening time. Every walk between stops is timed and none of the stops is a mall, so P2 and P3 hold.",
+    note: "A day from Praça do Comércio to Belém Tower; stop 4 has no opening time, breaking promise 1.",
+    hint: "One stop breaks promise P1: it lists no opening time. Every leg between stops is timed, on foot or by tram 28, and none of the stops is a mall, so P2 and P3 hold.",
   },
   {
     title: "Customer support replies, 6 templates",
@@ -582,6 +1319,116 @@ export const DEMO_PACKS: DemoPack[] = [
     windowSeconds: 3 * 86400,
     note: "A short craft list on naming; rule 5 shows only a good example, so it breaks promise 1.",
     hint: "One rule breaks promise P1: it is missing one of the two examples. Every rule is under 200 words, so P2 holds throughout.",
+  },
+  {
+    title: "Ten-minute breakfasts, 6 recipes",
+    kind: "recipes",
+    promises: BREAKFAST_PROMISES,
+    sections: [breakfast1, breakfast2, breakfast3, breakfast4, breakfast5, breakfast6],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Six no-cook breakfasts under ten minutes; recipe 4 cooks in a pan on the stove, breaking promise 2.",
+    hint: "One recipe breaks promise P2: it needs heat. Every recipe states a time of ten minutes or less and serves one, so P1 and P3 hold.",
+  },
+  {
+    title: "Freelance proposal templates, 5 templates",
+    kind: "templates",
+    promises: PROPOSAL_PROMISES,
+    sections: [proposal1, proposal2, proposal3, proposal4, proposal5],
+    priceGen: "1",
+    windowSeconds: 2 * 86400,
+    note: "Five one-page proposals with a price and a date; template 3 never names a delivery date, breaking promise 2.",
+    hint: "One template breaks promise P2: it names no delivery date. Every template names a price and leaves no placeholder unfilled, so P1 and P3 hold.",
+  },
+  {
+    title: "Meeting invitations, 6 templates",
+    kind: "templates",
+    promises: INVITE_PROMISES,
+    sections: [invite1, invite2, invite3, invite4, invite5, invite6],
+    priceGen: "0.5",
+    windowSeconds: 86400,
+    note: "Six short invitations, from a kickoff to a reschedule; every promise holds.",
+    hint: "Every promise holds. Each invitation names a day, a start time and a length, says what to prepare, and stays under 150 words; any dispute loses.",
+  },
+  {
+    title: "Newton's three laws and friends, 6 cards",
+    kind: "notes",
+    promises: PHYSICS_PROMISES,
+    sections: [physics1, physics2, physics3, physics4, physics5, physics6],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Six revision cards with formulas and worked examples; card 5 ends without a worked example, breaking promise 1.",
+    hint: "One card breaks promise P1: it has no worked example. Every card states a formula and stays under 200 words, so P2 and P3 hold.",
+  },
+  {
+    title: "Spanish irregular verbs, 8 cards",
+    kind: "notes",
+    promises: SPANISH_PROMISES,
+    sections: [spanish1, spanish2, spanish3, spanish4, spanish5, spanish6, spanish7, spanish8],
+    priceGen: "0.5",
+    windowSeconds: 3 * 86400,
+    note: "Eight verbs, each conjugated in full with an example sentence; every promise holds.",
+    hint: "Every promise holds. Each card gives all six present-tense forms, one translated example, and stays under 150 words; any dispute loses.",
+  },
+  {
+    title: "Journal prompts for a hard week, 8 prompts",
+    kind: "prompts",
+    promises: JOURNAL_PROMISES,
+    sections: [journal1, journal2, journal3, journal4, journal5, journal6, journal7, journal8],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Eight prompts written as questions; prompt 5 is a set of instructions instead, breaking promise 1.",
+    hint: "One prompt breaks promise P1: it is not a question. Every prompt is one paragraph under 120 words, so P2 and P3 hold.",
+  },
+  {
+    title: "Interview questions for hiring a designer, 7 prompts",
+    kind: "prompts",
+    promises: INTERVIEW_PROMISES,
+    sections: [interview1, interview2, interview3, interview4, interview5, interview6, interview7],
+    priceGen: "1",
+    windowSeconds: 2 * 86400,
+    note: "Seven open-ended questions, each with what a strong answer includes; every promise holds.",
+    hint: "Every promise holds. No question can be answered yes or no, each says what a strong answer includes, and each is under 150 words; any dispute loses.",
+  },
+  {
+    title: "Caring for houseplants, 6 plants",
+    kind: "guide",
+    promises: PLANT_PROMISES,
+    sections: [plant1, plant2, plant3, plant4, plant5, plant6],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Six easy plants with light, water and overwatering signs; plant 4 never says how often to water, breaking promise 1.",
+    hint: "One plant breaks promise P1: it never says how often to water. Every plant states its light and one sign of too much water, so P2 and P3 hold.",
+  },
+  {
+    title: "A weekend in Kyoto, 6 stops",
+    kind: "guide",
+    promises: KYOTO_PROMISES,
+    sections: [kyoto1, kyoto2, kyoto3, kyoto4, kyoto5, kyoto6],
+    priceGen: "1.5",
+    windowSeconds: 3 * 86400,
+    note: "Two days from Fushimi Inari to Gion, with opening times and transport for every stop; every promise holds.",
+    hint: "Every promise holds. Each stop lists an opening time and how to reach it from the last, and none is a mall; any dispute loses.",
+  },
+  {
+    title: "Rules for a two-player card game",
+    kind: "other",
+    promises: GAME_PROMISES,
+    sections: [game1, game2, game3, game4, game5, game6, game7],
+    priceGen: "0.5",
+    windowSeconds: 86400,
+    note: "Bridgeway, a seven-rule game for one deck and two players; every promise holds.",
+    hint: "Every promise holds. Each rule is under 120 words, needs only one deck and two players, and never mentions money; any dispute loses.",
+  },
+  {
+    title: "Eight rules for good commit messages",
+    kind: "other",
+    promises: COMMIT_PROMISES,
+    sections: [commit1, commit2, commit3, commit4, commit5, commit6, commit7, commit8],
+    priceGen: "1",
+    windowSeconds: 3 * 86400,
+    note: "A short craft list on commit messages; rule 6 has no example, breaking promise 1.",
+    hint: "One rule breaks promise P1: it has no example. Every rule is under 150 words, so P2 holds throughout.",
   },
 ];
 

@@ -140,6 +140,12 @@ export default function SellPage() {
     }
   });
 
+  const demoCounts = React.useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const d of DEMO_PACKS) c[d.kind] = (c[d.kind] ?? 0) + 1;
+    return c;
+  }, []);
+
   const loadDemo = (i: number) => {
     const d = DEMO_PACKS[i];
     setTitle(d.title);
@@ -209,33 +215,60 @@ export default function SellPage() {
 
       <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
         <form
-          className="space-y-8"
+          className="min-w-0 space-y-8"
           onSubmit={(e) => {
             e.preventDefault();
             void list();
           }}
         >
-          <fieldset disabled={step !== "form"} className="space-y-8">
-            <div className="space-y-3 rounded-xl border border-dashed bg-card p-3 text-sm">
-              <div className="flex items-center gap-2">
-                <Sparkles className="size-4 text-gold" />
-                <span>Load a demo pack</span>
+          <fieldset disabled={step !== "form"} className="min-w-0 space-y-8">
+            <div className="min-w-0 space-y-3 rounded-xl border border-dashed bg-card p-3 text-sm">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-4 text-gold" />
+                  <span className="font-medium">Load a demo pack</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Pick a kind, then load an example; every example is real content you can list as it is.</p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {DEMO_PACKS.map((d, i) => (
-                  <div key={d.title} className="flex flex-col gap-2 rounded-lg border bg-background p-3">
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg leading-none" aria-hidden>{kindEmoji(d.kind)}</span>
-                      <div className="min-w-0 space-y-1">
-                        <p className="text-sm font-medium leading-snug">{d.title}</p>
-                        <p className="text-xs text-muted-foreground">{d.note}</p>
+              <div role="tablist" aria-label="Demo pack kinds" className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:thin]">
+                {KINDS.map((k) => {
+                  const active = k === kind;
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setKind(k)}
+                      className={cn(
+                        "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs whitespace-nowrap transition-colors",
+                        active ? "border-primary bg-primary/10 text-foreground" : "bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                      )}
+                    >
+                      <span aria-hidden>{kindEmoji(k)}</span>
+                      <span className="capitalize">{k}</span>
+                      <span className={cn("rounded-full px-1.5 font-mono text-[10px] tabular-nums", active ? "bg-primary/15" : "bg-muted")}>{demoCounts[k] ?? 0}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div role="tabpanel" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {DEMO_PACKS.map((d, i) =>
+                  d.kind === kind ? (
+                    <div key={d.title} className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background p-3">
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg leading-none" aria-hidden>{kindEmoji(d.kind)}</span>
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-sm font-medium leading-snug break-words">{d.title}</p>
+                          <p className="text-xs text-muted-foreground break-words">{d.note}</p>
+                        </div>
                       </div>
+                      <Button type="button" size="sm" variant="outline" className="mt-auto self-start" onClick={() => loadDemo(i)}>
+                        Load
+                      </Button>
                     </div>
-                    <Button type="button" size="sm" variant="outline" className="mt-auto self-start" onClick={() => loadDemo(i)}>
-                      Load
-                    </Button>
-                  </div>
-                ))}
+                  ) : null,
+                )}
               </div>
             </div>
 

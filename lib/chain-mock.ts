@@ -43,7 +43,7 @@ const listings: Listing[] = DEMO_PACKS.map((p, i) => ({
   sectionCount: p.sections.length,
   priceAtto: toAtto(p.priceGen).toString(),
   windowSeconds: p.windowSeconds,
-  createdAt: `2026-09-18T10:0${i * 5}:00.000Z`.replace("10:015", "10:15"),
+  createdAt: new Date(Date.UTC(2026, 8, 18, 10, i * 5)).toISOString(),
   open: true,
   orders: 0,
   kept: 0,

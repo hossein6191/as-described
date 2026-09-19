@@ -62,7 +62,7 @@ tests/on_chain/smoke.mjs      throwaway-account run against Studio; results in t
 app/, components/, lib/       the Next.js site (shop, pack, order, sell, ledger, orders, deploy)
 app/api/packs/[id]/…          the delivery API (signed upload, signed read, status)
 docs/                         DESIGN.md · CONTRACTS.md · DECISIONS.md · API.md · BRAND.md
-lib/demo-packs.ts             eight demo packs, real content (most with one quiet broken promise)
+lib/demo-packs.ts             nineteen demo packs, three or more per kind, real content (most with one quiet broken promise)
 ```
 
 ## Running it
