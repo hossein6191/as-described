@@ -10,8 +10,8 @@ independently decide whether it breaks the promise, and the contract moves the m
 verdict. Nobody can refuse a refund, and nobody can fake the evidence: the revealed text must
 hash to what the seller committed before the sale.
 
-- Live site: _(filled in after the owner deploys)_
-- Contract: _(one address, on GenLayer Studio, chain 61999 — filled in after the owner deploys)_
+- Live site: <https://as-described.vercel.app>
+- Contract: `0x2f75c3C4854AebF095711510B7075e8f0805966F` on GenLayer Studio, chain 61999 (bytes identical to `contracts/as_described.py`)
 - Explorer: <https://explorer-studio.genlayer.com>
 
 Built on GenLayer Studio (chain 61999). Test GEN only, no real money.
@@ -62,7 +62,7 @@ tests/on_chain/smoke.mjs      throwaway-account run against Studio; results in t
 app/, components/, lib/       the Next.js site (shop, pack, order, sell, ledger, orders, deploy)
 app/api/packs/[id]/…          the delivery API (signed upload, signed read, status)
 docs/                         DESIGN.md · CONTRACTS.md · DECISIONS.md · API.md · BRAND.md
-lib/demo-packs.ts             the three demo packs, real content
+lib/demo-packs.ts             eight demo packs, real content (most with one quiet broken promise)
 ```
 
 ## Running it
