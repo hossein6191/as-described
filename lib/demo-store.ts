@@ -1,6 +1,6 @@
 // Content-addressed fallback for the demo packs (server side, node runtime).
 //
-// The three demo packs live in the repository, so a listing whose committed hashes are exactly
+// The demo packs live in the repository, so a listing whose committed hashes are exactly
 // the hashes of a demo pack's sections can be served without a storage bucket: the content is
 // public in lib/demo-packs.ts anyway. Every other pack needs the store (Vercel Blob or .data/).
 // Matching is by the section hashes the seller committed on chain, never by title or id, so a

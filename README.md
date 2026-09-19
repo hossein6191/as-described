@@ -84,7 +84,7 @@ python tools/mutate.py
 
 Environment (see `.env.example`): `NEXT_PUBLIC_CONTRACT` (the register), `BLOB_READ_WRITE_TOKEN`
 (Vercel Blob for uploaded packs; without it the local `.data/` folder is used), `PACK_SECRET`
-(packs are encrypted at rest with a key derived from it). The three demo packs need no store:
+(packs are encrypted at rest with a key derived from it). The demo packs need no store:
 a listing whose committed hashes are exactly a demo pack's is served from the repository.
 
 ## Who may do what

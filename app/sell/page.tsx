@@ -20,7 +20,7 @@ import { useRead, useSearchString } from "@/components/use-read";
 import { demoKeys, demoSectionsFor } from "@/lib/demo-keys";
 import { BlockSkeleton, ReadBlock } from "@/components/read-state";
 import { DEMO_PACKS, PROMISE_TEMPLATES, WORLD_KNOWLEDGE_WORDS } from "@/lib/demo-packs";
-import { gen, toAtto } from "@/lib/format";
+import { gen, kindEmoji, toAtto } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // The contract's limits (docs/DESIGN.md §1). The form refuses what the contract would refuse.
@@ -44,7 +44,7 @@ function StorageNote({ storage, isDemo }: { storage: StorageStatus | null; isDem
   return (
     <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
       <AlertTriangle className="mr-1 inline size-3.5 text-gold" />
-      This site has no storage for uploaded packs yet, so only the three demo packs can be sold here. Load one above, or
+      This site has no storage for uploaded packs yet, so only the demo packs can be sold here. Load one above, or
       wait for the site owner to connect a storage bucket.
     </p>
   );
@@ -216,14 +216,27 @@ export default function SellPage() {
           }}
         >
           <fieldset disabled={step !== "form"} className="space-y-8">
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed bg-card p-3 text-sm">
-              <Sparkles className="size-4 text-gold" />
-              <span className="mr-2">Load a demo pack:</span>
-              {DEMO_PACKS.map((d, i) => (
-                <Button key={d.title} type="button" size="sm" variant="outline" onClick={() => loadDemo(i)} title={d.note}>
-                  {i + 1}. {d.title.length > 28 ? d.title.slice(0, 28) + "…" : d.title}
-                </Button>
-              ))}
+            <div className="space-y-3 rounded-xl border border-dashed bg-card p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-gold" />
+                <span>Load a demo pack</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {DEMO_PACKS.map((d, i) => (
+                  <div key={d.title} className="flex flex-col gap-2 rounded-lg border bg-background p-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg leading-none" aria-hidden>{kindEmoji(d.kind)}</span>
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-sm font-medium leading-snug">{d.title}</p>
+                        <p className="text-xs text-muted-foreground">{d.note}</p>
+                      </div>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" className="mt-auto self-start" onClick={() => loadDemo(i)}>
+                      Load
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
