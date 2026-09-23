@@ -14,20 +14,23 @@ import { useTx, failureOf, cleanWalletError } from "@/components/use-tx";
 import { useWallet } from "@/components/wallet";
 import { WalletGate } from "@/components/wallet-gate";
 import { isMock, readListing } from "@/lib/chain";
-import { manifestOf, sha256Hex, storageStatus, uploadMessage, uploadPack, type StorageStatus } from "@/lib/api";
+import { forgetPackStatus, manifestOf, sha256Hex, storageStatus, uploadMessage, uploadPack, type StorageStatus } from "@/lib/api";
 import { mockStorePack } from "@/lib/chain-mock";
 import { useRead, useSearchString } from "@/components/use-read";
 import { demoKeys, demoSectionsFor } from "@/lib/demo-keys";
 import { BlockSkeleton, ReadBlock } from "@/components/read-state";
+import { YourRegisterNotice } from "@/components/register-line";
 import { DEMO_PACKS, PROMISE_TEMPLATES, WORLD_KNOWLEDGE_WORDS } from "@/lib/demo-packs";
 import { gen, kindEmoji, toAtto } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-// The contract's limits (docs/DESIGN.md §1). The form refuses what the contract would refuse.
+// The contract's limits (docs/CONTRACTS.md, "Constants"). The form refuses what the contract would refuse.
 const KINDS = ["recipes", "templates", "notes", "prompts", "guide", "other"] as const;
 const MIN_TITLE = 3, MAX_TITLE = 60;
 const MIN_PROMISES = 1, MAX_PROMISES = 6, MIN_PROMISE_CHARS = 8, MAX_PROMISE_CHARS = 160;
 const MIN_SECTIONS = 1, MAX_SECTIONS = 12, MAX_SECTION_CHARS = 4000;
+/** Characters as the contract counts them (code points), not the UTF-16 code units String.length counts. */
+const charCount = (text: string) => Array.from(text).length;
 const MIN_PRICE = 10n ** 17n, MAX_PRICE = 1000n * 10n ** 18n;
 const WINDOWS = [
   { value: "300", label: "5 minutes" },
@@ -129,7 +132,7 @@ export default function SellPage() {
     if (sections.length < MIN_SECTIONS || sections.length > MAX_SECTIONS) p.push(`Between ${MIN_SECTIONS} and ${MAX_SECTIONS} sections.`);
     sections.forEach((s, i) => {
       if (!s.trim()) p.push(`Section ${i + 1} is empty.`);
-      if (s.length > MAX_SECTION_CHARS) p.push(`Section ${i + 1} is over ${MAX_SECTION_CHARS} characters.`);
+      if (charCount(s) > MAX_SECTION_CHARS) p.push(`Section ${i + 1} is over ${MAX_SECTION_CHARS} characters.`);
     });
     try {
       const atto = toAtto(priceGen);
@@ -212,6 +215,7 @@ export default function SellPage() {
       const signature = await w.signMessage(uploadMessage(listingId, manifest));
       const r = await uploadPack(listingId, sections, w.address, signature);
       if (!r.ok) throw new Error(r.reason || "The upload was refused.");
+      forgetPackStatus();   // the pack is delivered now; no page should reuse the old answer
       setStep("done");
     } catch (e) {
       setUploadError(cleanWalletError(e instanceof Error ? e.message : String(e)));
@@ -390,7 +394,7 @@ export default function SellPage() {
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <Label htmlFor={`section-${i}`}>Section {i + 1}</Label>
                       <div className="flex items-center gap-2">
-                        <span className={cn("text-[11px] tabular-nums", s.length > MAX_SECTION_CHARS ? "text-breaks" : "text-muted-foreground")}>{s.length}/{MAX_SECTION_CHARS}</span>
+                        <span className={cn("text-[11px] tabular-nums", charCount(s) > MAX_SECTION_CHARS ? "text-breaks" : "text-muted-foreground")}>{charCount(s)}/{MAX_SECTION_CHARS}</span>
                         <Button type="button" size="icon-sm" variant="ghost" aria-label={`Remove section ${i + 1}`} disabled={sections.length <= MIN_SECTIONS} onClick={() => setSections((ss) => ss.filter((_, j) => j !== i))}>
                           <Trash2 />
                         </Button>
@@ -607,6 +611,7 @@ function ResumeUpload({ id, storage }: { id: string; storage: StorageStatus | nu
       }
       const signature = await w.signMessage(uploadMessage(listing.id, await manifestOf(target)));
       const r = await uploadPack(listing.id, sections, w.address, signature);
+      forgetPackStatus();
       if (!r.ok) throw new Error(r.reason || "The upload was refused.");
       setDone(true);
     } catch (e) {
@@ -624,73 +629,84 @@ function ResumeUpload({ id, storage }: { id: string; storage: StorageStatus | nu
           The listing is on chain; buyers need its text. Paste every section exactly as it was hashed, then sign the upload.
         </p>
       </div>
-      <ReadBlock state={state} skeleton={<BlockSkeleton lines={4} />}>
-        {(l) =>
-          !l ? (
-            <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">There is no listing named {id} on this register.</p>
-          ) : (
-            <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
-              <div className="space-y-6">
-                <div className="rounded-xl border bg-card p-4 text-sm">
-                  <p className="font-medium">{l.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {l.id} · {gen(l.priceAtto)} · {l.hashes.length} sections · seller {l.seller.slice(0, 6)}…{l.seller.slice(-4)}
-                  </p>
-                  <ol className="mt-2 space-y-1 text-xs text-muted-foreground">
-                    {l.promises.map((p, i) => (
-                      <li key={i}>P{i + 1} · {p}</li>
-                    ))}
-                  </ol>
-                </div>
-                <ol className="space-y-3">
-                  {(sections ?? []).map((t, i) => (
-                    <li key={i} className="rounded-xl border bg-card p-3">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <Label htmlFor={`resume-${i}`}>Section {i + 1}</Label>
-                        <span className={cn("text-[11px]", matches[i] ? "text-keeps" : t ? "text-breaks" : "text-muted-foreground")}>
-                          {matches[i] ? "matches the listing" : t ? "does not match the committed hash" : "empty"}
-                        </span>
-                      </div>
-                      <Textarea id={`resume-${i}`} value={t} rows={6} onChange={(e) => setSections((ss) => (ss ?? []).map((x, j) => (j === i ? e.target.value : x)))} className="min-h-32 font-mono text-xs leading-relaxed" disabled={done} />
-                      <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground" title={target[i]}>committed {target[i]}</p>
-                    </li>
+      <ReadBlock
+        state={state}
+        skeleton={<BlockSkeleton lines={4} />}
+        emptyWhen={(l) => l === null}
+        empty={
+          <div className="space-y-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+            <p>
+              The network answered, and there is no listing named <span className="font-mono">{id}</span> on this register.{" "}
+              <Link href="/orders" className="text-primary underline-offset-4 hover:underline">
+                Back to My orders.
+              </Link>
+            </p>
+            <YourRegisterNotice />
+          </div>
+        }
+      >
+        {(l) => (
+          <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
+            <div className="space-y-6">
+              <div className="rounded-xl border bg-card p-4 text-sm">
+                <p className="font-medium">{l.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {l.id} · {gen(l.priceAtto)} · {l.hashes.length} sections · seller {l.seller.slice(0, 6)}…{l.seller.slice(-4)}
+                </p>
+                <ol className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {l.promises.map((p, i) => (
+                    <li key={i}>P{i + 1} · {p}</li>
                   ))}
                 </ol>
               </div>
-              <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
-                <div className="space-y-3 rounded-2xl border bg-card p-5">
-                  <h2 className="font-semibold">Upload</h2>
-                  <p className="text-xs text-muted-foreground">
-                    {allMatch ? "Every section matches. Sign once and buyers can read the pack." : `${matches.filter(Boolean).length} of ${target.length} sections match so far.`}
-                  </p>
-                  {!isMock && listing && w.address && !mine ? (
-                    <p className="text-xs text-breaks">Only the wallet that listed this pack can upload its text.</p>
-                  ) : null}
-                  <StorageNote storage={storage} isDemo={isDemo} resume />
-                  {done ? (
-                    <div className="space-y-2 rounded-lg border border-keeps/40 bg-keeps/10 p-3 text-sm">
-                      <p className="flex items-center gap-2 font-medium">
-                        <Check className="size-4 text-keeps" /> The text is uploaded. Buyers can read {l.id} now.
-                      </p>
-                      <Button asChild variant="cool" className="w-full">
-                        <Link href={`/pack/${l.id}`}>
-                          Open {l.id} <ArrowRight />
-                        </Link>
-                      </Button>
+              <ol className="space-y-3">
+                {(sections ?? []).map((t, i) => (
+                  <li key={i} className="rounded-xl border bg-card p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <Label htmlFor={`resume-${i}`}>Section {i + 1}</Label>
+                      <span className={cn("text-[11px]", matches[i] ? "text-keeps" : t ? "text-breaks" : "text-muted-foreground")}>
+                        {matches[i] ? "matches the listing" : t ? "does not match the committed hash" : "empty"}
+                      </span>
                     </div>
-                  ) : (
-                    <WalletGate action="upload the text">
-                      <Button type="button" variant="cool" size="lg" className="w-full" onClick={() => void upload()} disabled={!allMatch || uploading || blocked || (!isMock && !mine)}>
-                        {uploading ? <Loader2 className="animate-spin" /> : null} Sign and upload
-                      </Button>
-                    </WalletGate>
-                  )}
-                  {error ? <p className="text-sm text-breaks">{error}</p> : null}
-                </div>
-              </aside>
+                    <Textarea id={`resume-${i}`} value={t} rows={6} onChange={(e) => setSections((ss) => (ss ?? []).map((x, j) => (j === i ? e.target.value : x)))} className="min-h-32 font-mono text-xs leading-relaxed" disabled={done} />
+                    <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground" title={target[i]}>committed {target[i]}</p>
+                  </li>
+                ))}
+              </ol>
             </div>
-          )
-        }
+            <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+              <div className="space-y-3 rounded-2xl border bg-card p-5">
+                <h2 className="font-semibold">Upload</h2>
+                <p className="text-xs text-muted-foreground">
+                  {allMatch ? "Every section matches. Sign once and buyers can read the pack." : `${matches.filter(Boolean).length} of ${target.length} sections match so far.`}
+                </p>
+                {!isMock && listing && w.address && !mine ? (
+                  <p className="text-xs text-breaks">Only the wallet that listed this pack can upload its text.</p>
+                ) : null}
+                <StorageNote storage={storage} isDemo={isDemo} resume />
+                {done ? (
+                  <div className="space-y-2 rounded-lg border border-keeps/40 bg-keeps/10 p-3 text-sm">
+                    <p className="flex items-center gap-2 font-medium">
+                      <Check className="size-4 text-keeps" /> The text is uploaded. Buyers can read {l.id} now.
+                    </p>
+                    <Button asChild variant="cool" className="w-full">
+                      <Link href={`/pack/${l.id}`}>
+                        Open {l.id} <ArrowRight />
+                      </Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <WalletGate action="upload the text">
+                    <Button type="button" variant="cool" size="lg" className="w-full" onClick={() => void upload()} disabled={!allMatch || uploading || blocked || (!isMock && !mine)}>
+                      {uploading ? <Loader2 className="animate-spin" /> : null} Sign and upload
+                    </Button>
+                  </WalletGate>
+                )}
+                {error ? <p className="text-sm text-breaks">{error}</p> : null}
+              </div>
+            </aside>
+          </div>
+        )}
       </ReadBlock>
     </div>
   );

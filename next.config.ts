@@ -20,6 +20,12 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
           { key: "X-Frame-Options", value: "DENY" },
+          // /contracts/as_described.py is served as text/plain so a browser shows it, and /deploy
+          // fetches it; without this a browser is free to sniff that response into another type.
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // An order page is opened with ?tx=<hash>; a click through to the explorer must not
+          // carry the whole URL, only the origin.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },
       {

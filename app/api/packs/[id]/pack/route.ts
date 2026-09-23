@@ -1,8 +1,9 @@
-// POST /api/packs/[id]/pack  { order, address, signature, register }
+// POST /api/packs/[id]/pack  { order, address, signature, issued, register }
 // The buyer reads the sections of an order. In this order, and nothing is read from the chain
-// before the first two pass: the register is the site default or runs this contract's code
-// (lib/register-param.ts); the signature over readMessage (this site's host, chain 61999, that
-// register, the order) recovers to `address`; then the chain says `address` is the order's buyer
+// before the first three pass: the register is the site default or runs this contract's code
+// (lib/register-param.ts); `issued` is inside the signature window (lib/api.ts); the signature
+// over readMessage (this site's host, chain 61999, that register, the listing, the order and
+// that same `issued`) recovers to `address`; then the chain says `address` is the order's buyer
 // and the order belongs to listing [id]. Returns { ok, sections }. The seller's copy is never
 // served to anybody else. Past the signature the chain reads are budgeted per caller, because
 // signing this message costs the signer nothing.
@@ -10,7 +11,7 @@
 // not required for the mock buyer (no key exists for that address); documented in docs/API.md.
 
 import { verifyMessage } from "viem";
-import { readMessageFor } from "@/lib/api";
+import { issuedIsFresh, READ_SIG_MAX_AGE_MS, readMessageFor } from "@/lib/api";
 import { readListing, readOrder, NETWORK_ERROR } from "@/lib/chain";
 import { demoSectionsFor } from "@/lib/demo-store";
 import { isListingId, isOrderId, loadPack } from "@/lib/store";
@@ -28,7 +29,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   if (!isListingId(id)) return reply(400, { ok: false, reason: "bad listing id" });
 
-  let body: { order?: unknown; address?: unknown; signature?: unknown; register?: unknown };
+  let body: { order?: unknown; address?: unknown; signature?: unknown; register?: unknown; issued?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -40,12 +41,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!isOrderId(orderId)) return reply(400, { ok: false, reason: "order must be an order id like O7" });
   if (!ADDRESS.test(address)) return reply(400, { ok: false, reason: "address must be a 0x address" });
 
-  const checked = await checkRegister(body.register);
+  // Vetting an unknown register is itself a chain read, and it happens before any signature, so
+  // it is budgeted against the caller inside checkRegister (lib/register-param.ts).
+  const caller = callerOf(req);
+  const checked = await checkRegister(body.register, caller);
   if (!checked.ok) return reply(checked.status, { ok: false, reason: checked.reason });
   const register = checked.register;
 
-  // The message is rebuilt here from this host and the checked register, never taken from the caller.
-  const message = readMessageFor({ site: siteOf(req), register }, orderId);
+  // The message is rebuilt here from this host, the checked register and the listing in the path,
+  // never taken from the caller. Only `issued` comes from the body, and only inside its window:
+  // without it a signature is a bearer token with no end, good from any client for ever.
+  const issued = typeof body.issued === "string" ? body.issued : "";
+  const days = Math.round(READ_SIG_MAX_AGE_MS / 86_400_000);
+  if (signature && !issuedIsFresh(issued)) {
+    return reply(401, {
+      ok: false,
+      reason: `this signature is older than ${days} days or carries no readable time; sign the read message again`,
+    });
+  }
+  const message = readMessageFor({ site: siteOf(req), register }, orderId, id, issued);
   if (!signature) {
     if (!mockAllowed) return reply(401, { ok: false, reason: "signature is required" });
   } else {
@@ -64,7 +78,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   // A signature costs the signer nothing, so the chain reads below are also budgeted per caller.
-  if (!takeChainRead(callerOf(req))) return reply(429, { ok: false, reason: TOO_MANY_READS });
+  // Where no header identifies the caller, the verified signer is the key: better one budget per
+  // wallet than one shared bucket in which the eleventh honest buyer of the minute is refused.
+  if (!takeChainRead(caller === "all" ? address : caller)) return reply(429, { ok: false, reason: TOO_MANY_READS });
 
   let order;
   try {

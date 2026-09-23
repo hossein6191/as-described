@@ -70,7 +70,7 @@ export function BuyCard({
               <dt className="text-muted-foreground">Bond you would post to dispute</dt>
               <dd className="text-right">
                 {bondLabel}
-                <span className="block text-xs text-muted-foreground">back to you if you are right</span>
+                <span className="block text-xs text-muted-foreground">you lose it only on a keeps verdict</span>
               </dd>
             </div>
           </dl>

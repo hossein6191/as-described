@@ -72,6 +72,8 @@ export type Order = {
   revealedText: string;
   missingIndex: number;
   missingAt: string;
+  /** how many more sections this buyer may report missing; null on a register that does not publish it */
+  missingReportsLeft: number | null;
   paidBuyer: string;
   paidSeller: string;
   windowOpen: boolean;
@@ -512,6 +514,9 @@ export function mapOrder(row: Row, id: string, readAtMs: number = Date.now()): O
     revealedText,
     missingIndex,
     missingAt,
+    // An older register has no cap and no counter, so the page is told "unknown" rather than a
+    // number it made up, and it leaves the contract to refuse a report it will not accept.
+    missingReportsLeft: "missing_reports_left" in row ? num(row.missing_reports_left, 0) : null,
     paidBuyer: atto(row.paid_buyer ?? row.paidBuyer),
     paidSeller: atto(row.paid_seller ?? row.paidSeller),
     windowOpen: bool(row.window_open ?? row.windowOpen),
@@ -642,6 +647,14 @@ export async function readListing(
 export const LISTINGS_PAGE = 25;
 /** More pages than this is a runaway loop, not a shop (1000 listings). */
 const MAX_LISTING_PAGES = 40;
+/**
+ * Listings read one by one on a register with no listings() view. Studio allows 30 gen_call a
+ * minute per client and this path costs one call per listing on top of listing_ids, so a shelf
+ * of a dozen or more packs would spend the whole minute on one page load. The newest this many
+ * are read; the rest of the shelf is on the ledger, and a register deployed from /deploy has the
+ * listings() view and never takes this path at all.
+ */
+const MAX_ROWS_ONE_BY_ONE = 24;
 /** Registers (lowercase) that answered they have no listings() view: asked once, then read row by row. */
 const withoutListingsView = new Set<string>();
 
@@ -738,7 +751,8 @@ export async function readAllListings(): Promise<ReadResult<Listing[]>> {
     snapListings,
   );
   if (all) return all;
-  const r = await listingsRowByRow(register, (ids) => ids);
+  // An older register, read row by row: capped, newest first in the ids, kept in listing order.
+  const r = await listingsRowByRow(register, (ids) => ids.slice(-MAX_ROWS_ONE_BY_ONE));
   return { data: r.data.rows, source: r.source };
 }
 
@@ -859,6 +873,7 @@ export type WriteFn =
   | "close_listing"
   | "buy"
   | "open_dispute"
+  | "withdraw_dispute"
   | "judge"
   | "release"
   | "report_missing"

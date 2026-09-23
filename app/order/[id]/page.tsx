@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, Check, Circle, Clock, FileQuestion, Gavel, Link2, ListChecks, Loader2, RefreshCw, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, Check, Circle, Clock, FileQuestion, Gavel, Link2, ListChecks, Loader2, RefreshCw, ShieldAlert, Undo2, X } from "lucide-react";
 
 import { Address, TxLink } from "@/components/address";
 import { PromisePills } from "@/components/promise-pills";
@@ -32,7 +32,7 @@ import {
   type TxStatus,
   type WriteFn,
 } from "@/lib/chain";
-import { fetchPack, readMessage, sha256Hex } from "@/lib/api";
+import { fetchPack, issuedIsFresh, issuedNow, readMessage, sha256Hex } from "@/lib/api";
 import { mockPackSections } from "@/lib/chain-mock";
 import { demoKeys } from "@/lib/demo-keys";
 import { DEMO_PACKS } from "@/lib/demo-packs";
@@ -43,6 +43,8 @@ const REVEAL_HOURS = 24;
 const STALE_HOURS = 24;
 /** The contract's cap on one section. A committed section over it is settled "breaks" by rule, with no model asked. */
 const MAX_SECTION_CHARS = 4000;
+/** The contract's per-order cap on missing reports; the page only says what the order row confirms. */
+const MAX_MISSING_REPORTS = 3;
 /** After an applied write the order row is re-read this often, this many times, until its status moves. */
 const AWAIT_MS = 3000;
 const AWAIT_TRIES = 20;
@@ -79,6 +81,27 @@ const isUndeliveredReason = (reason: string) => /not uploaded|could not be opene
 
 /** The read-pack signature is cached per register, per signer and per order, so it is never sent for another. */
 const sigKey = (register: string, address: string, orderId: string) => `ad:sig:${register.toLowerCase()}:${address.toLowerCase()}:${orderId}`;
+
+/** What is cached under that key: the signature and the minute it was signed for. */
+type CachedSig = { s: string; i: string };
+
+/** The cached signature for this order, or null when there is none, it is unreadable, or it expired. */
+function cachedSig(key: string): CachedSig | null {
+  let raw = "";
+  try {
+    raw = localStorage.getItem(key) ?? "";
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Partial<CachedSig>;
+    if (typeof v?.s !== "string" || !v.s || !issuedIsFresh(v.i)) return null;
+    return { s: v.s, i: v.i as string };
+  } catch {
+    return null; // an older cache entry held the signature alone, with no time in it
+  }
+}
 
 /** Characters as the contract counts them (code points), for the section cap. */
 const charCount = (text: string) => Array.from(text).length;
@@ -161,7 +184,7 @@ function verdictSentence(o: Order, viewer: Viewer): string {
         : viewer === "seller"
           ? `You, the seller, receive ${price}; the buyer's ${bond} bond goes back to the buyer.`
           : `The seller receives ${price}; the buyer's ${bond} bond goes back to the buyer.`;
-    return `The validators could not tell whether section ${s} breaks promise ${p}. ${who}`;
+    return `The validators did not reach a clear answer on whether section ${s} breaks promise ${p}. ${who}`;
   }
   return "";
 }
@@ -292,7 +315,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   }, []);
 
   const loadPack = React.useCallback(
-    async (o: Order, l: Listing, sig?: string) => {
+    async (o: Order, l: Listing, sig?: CachedSig) => {
       setPackBusy(true);
       setPackError("");
       const key = sigKey(contractAddress(), w.address, o.id);
@@ -302,14 +325,15 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
           await verify(texts, l.hashes);
           return;
         }
-        let signature = sig;
-        if (!signature) {
-          signature = await w.signMessage(readMessage(o.id));
+        let signed = sig;
+        if (!signed) {
+          const issued = issuedNow();
+          signed = { s: await w.signMessage(readMessage(o.id, o.listing, issued)), i: issued };
           try {
-            localStorage.setItem(key, signature);
+            localStorage.setItem(key, JSON.stringify(signed));
           } catch {}
         }
-        const r = await fetchPack(o.listing, o.id, w.address, signature);
+        const r = await fetchPack(o.listing, o.id, w.address, signed.s, signed.i);
         if (!r.ok || !r.sections) {
           const reason = r.reason || "The delivery store refused the request.";
           // Nothing stored for this listing: the signature was fine, so keep it, and show the
@@ -349,12 +373,11 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         void loadPack(order, listing);
         return;
       }
-      let cached = "";
       try {
         // the old key named only the order, so it could hand one wallet's signature to another
         localStorage.removeItem(`ad:sig:${order.id}`);
-        if (w.address) cached = localStorage.getItem(sigKey(contractAddress(), w.address, order.id)) ?? "";
       } catch {}
+      const cached = w.address ? cachedSig(sigKey(contractAddress(), w.address, order.id)) : null;
       if (cached && w.address && w.address.toLowerCase() === order.buyer.toLowerCase()) void loadPack(order, listing, cached);
       else autoTried.current = "";
     }, 0);
@@ -413,6 +436,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const missingTx = useTx(applied);
   const revealTx = useTx(applied);
   const ruleTx = useTx(applied);
+  const withdrawTx = useTx(applied);
 
   /** Every write goes through here, so the re-read loop knows which status the write was sent from. */
   const send = (tx: TxRun, o: Order, fn: WriteFn, args: string[], valueAtto?: bigint) => {
@@ -520,10 +544,18 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
           const bondDone = o.status === "disputed" && o.sectionIndex >= 0;
           const judgeDone = o.status === "settled";
           const undelivered = rows ? rows.filter((s) => s.ok !== true) : [];
-          const revealedOnChain = onChain.filter((r) => r.kind === "revealed").sort((a, b) => a.index - b.index);
           const judged = o.status === "settled" && !!o.verdict && !!o.revealedText;
+          // A section the buyer reported missing, the seller revealed and the buyer then disputed
+          // has a reveal row and a judged row for the same index and the same bytes. The verdict
+          // card prints it, so the reveal card below must not print it a second time.
+          const revealedOnChain = onChain
+            .filter((r) => r.kind === "revealed" && !(judged && r.index === o.sectionIndex))
+            .sort((a, b) => a.index - b.index);
           const judgedOk = judged && onChain.some((r) => r.kind === "judged" && r.index === o.sectionIndex);
           const overCap = judged && charCount(o.revealedText) > MAX_SECTION_CHARS;
+          // null on a register that does not publish the counter: the page then says nothing about
+          // a cap it cannot read, and leaves the contract to refuse a report it will not accept.
+          const reportsLeft = o.missingReportsLeft;
           const refundLabel = viewer === "buyer" ? "your wallet" : "the buyer's wallet";
           const you = viewer === "buyer" ? "you" : "the buyer";
           const your = viewer === "buyer" ? "your" : "the buyer's";
@@ -938,6 +970,39 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </div>
                       </li>
                     </ol>
+                    {/* The way back out of a dispute, and the only one the buyer holds.
+                        judge() refuses any text that does not hash to the seller's commitment, so a
+                        buyer who disputed a section the seller never delivered as committed cannot
+                        judge it, cannot report it missing from `disputed`, and would lose the price
+                        to settle_stale 24 hours later. */}
+                    {o.status === "disputed" && !o.verdict && isBuyer ? (
+                      <div className="space-y-2 rounded-lg border border-dashed p-3 text-xs">
+                        <p className="font-medium">Disputed the wrong section, or the text never matched?</p>
+                        <p className="text-muted-foreground">
+                          Take the dispute back. Your {bond} bond returns, the price stays in escrow and the order goes back to paid with the same
+                          deadline ({when(deadline)}), where you can dispute another section or report one missing instead.
+                        </p>
+                        <WalletGate action="withdraw the dispute">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={stillOld || withdrawTx.sending || (!!withdrawTx.hash && !withdrawTx.final) || landedOk(withdrawTx)}
+                            onClick={() => void send(withdrawTx, o, "withdraw_dispute", [o.id])}
+                          >
+                            <Undo2 /> Withdraw the dispute
+                          </Button>
+                        </WalletGate>
+                        {withdrawTx.error ? <p className="text-breaks">{withdrawTx.error}</p> : null}
+                        {withdrawTx.hash ? <TxRail hash={withdrawTx.hash} label="Withdrawing the dispute" onDone={withdrawTx.onDone} className="mt-2" /> : null}
+                        {withdrawTx.final && failureOf(withdrawTx.final) ? <p className="text-breaks">{failureOf(withdrawTx.final)}</p> : null}
+                        {landedOk(withdrawTx) ? (
+                          <Recording gaveUp={rereadGaveUp} onReread={rereadNow}>
+                            Recording the withdrawal… the order row is re-read until it says paid again.
+                          </Recording>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {o.status === "disputed" && !o.verdict && !canSettleStale && staleAt ? (
                       <div className="flex items-start gap-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
                         <Clock className="mt-0.5 size-3.5 shrink-0" />
@@ -1039,8 +1104,8 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 {/* Sections the seller put on chain after a missing report: public, hash-checked, disputable.
                     They stay on the page after the order ends, whatever it ended as: the contract keeps every
                     reveal for good, and on a settled_stale or refunded order this text is the only public
-                    evidence that the seller did deliver. The judged text has its own card, and the filter
-                    below never repeats it. */}
+                    evidence that the seller did deliver. A section that was judged has its own card
+                    above, and the filter drops it here so no section is printed twice. */}
                 {revealedOnChain.length > 0 ? (
                   <section className="space-y-3 rounded-2xl border bg-card p-5 text-sm">
                     <h2 className="flex items-center gap-2 text-lg font-semibold">
@@ -1118,6 +1183,15 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                       <p className="text-muted-foreground">
                         Report a missing section: the seller then has {REVEAL_HOURS} hours to reveal its text on chain, and if they do not, anyone can trigger a full refund. No model is asked; the contract only checks the clock and the hash.
                       </p>
+                      {/* One report is all a pack that never arrived needs: the seller cannot reveal what
+                          they never had, and the refund is the whole price. The cap is on the contract. */}
+                      {reportsLeft !== null ? (
+                        <p className="text-xs text-muted-foreground">
+                          {reportsLeft === 0
+                            ? `This order has used all ${MAX_MISSING_REPORTS} of its missing reports. One section that is never revealed refunds the whole price, so report a section that did not arrive and wait out the ${REVEAL_HOURS} hours.`
+                            : `${reportsLeft} of ${MAX_MISSING_REPORTS} reports left on this order. One is enough when the pack never arrived: the seller cannot reveal what they never had, and the refund is the whole price.`}
+                        </p>
+                      ) : null}
                       {packError ? <p className="text-xs text-muted-foreground">The delivery store said: {packError}</p> : null}
                       {!windowOpen ? <p className="text-xs text-muted-foreground">The dispute window has closed, so a report is no longer possible.</p> : !isBuyer ? <p className="text-xs text-muted-foreground">Only the buyer can report a section.</p> : null}
                     </div>
@@ -1141,7 +1215,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         <WalletGate action="read your pack">{null}</WalletGate>
                       ) : !isBuyer ? (
                         <p className="text-muted-foreground">
-                          This order belongs to <span className="font-mono">{o.buyer}</span>. Connect that wallet to read the pack.
+                          This order belongs to <span className="break-hash font-mono">{o.buyer}</span>. Connect that wallet to read the pack.
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -1215,7 +1289,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                                   size="sm"
                                   variant="outline"
                                   onClick={() => void send(missingTx, o, "report_missing", [o.id, String(s.index)])}
-                                  disabled={stillOld || missingTx.sending || (!!missingTx.hash && !missingTx.final) || landedOk(missingTx)}
+                                  disabled={stillOld || reportsLeft === 0 || missingTx.sending || (!!missingTx.hash && !missingTx.final) || landedOk(missingTx)}
                                 >
                                   <FileQuestion /> Section missing? Report it
                                 </Button>

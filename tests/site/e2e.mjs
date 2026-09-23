@@ -53,7 +53,7 @@ if (SITE_REGISTER && SITE_REGISTER.toLowerCase() === CONTRACT.toLowerCase()) {
   throw new Error("CONTRACT is the register the site ships with; deploy a throwaway one and use that");
 }
 
-const STEPS = (process.env.STEPS || "a,s,b,c,d,r,e,f,g").split(",").map((s) => s.trim());
+const STEPS = (process.env.STEPS || "v,a,s,b,c,d,r,e,f,g").split(",").map((s) => s.trim());
 const on = (s) => STEPS.includes(s);
 
 mkdirSync(SHOTS, { recursive: true });
@@ -328,6 +328,8 @@ async function click(page, tag, text, opts) {
   return el;
 }
 /** A section <li> of the order page, found by its "Section N" header. */
+/** The label of the button that opens the promise dialog on a section row (app/order/[id]/page.tsx). */
+const DISPUTE_BUTTON = "Dispute this section";
 async function clickInSection(page, n, buttonText) {
   const handle = await page.evaluateHandle(
     (n, buttonText) => {
@@ -793,7 +795,7 @@ const detailsText = (page) =>
  */
 async function dispute(page, orderId, section, promiseNo, { bondExpected = "", snippet = "", sectionText = "" } = {}) {
   const out = { bond: null, judge: null, dialog: "", confirm: "", bondShown: null, bondToDispute: null, pasted: false, verdictCard: "", judgedText: false, judgeGone: null, votes: "", status: "", paidSeller: null, paidBuyer: null, retried: false };
-  await clickInSection(page, section, "This breaks a promise");
+  await clickInSection(page, section, DISPUTE_BUTTON);
   await waitDialog(page);
   out.dialog = (await dialogText(page)).slice(0, 220);
   await shot(page, `order-${orderId}-pick-promise`);
@@ -876,7 +878,7 @@ async function dispute(page, orderId, section, promiseNo, { bondExpected = "", s
 async function dialogOnPhone(page, section) {
   await page.setViewport({ width: 375, height: 812 });
   await sleep(800);
-  await clickInSection(page, section, "This breaks a promise");
+  await clickInSection(page, section, DISPUTE_BUTTON);
   await waitDialog(page);
   const m = await page.evaluate(() => {
     const d = Array.from(document.querySelectorAll('[role="dialog"], [data-slot="dialog-content"]')).find((x) => x.offsetWidth || x.offsetHeight);
@@ -941,6 +943,49 @@ try {
   await launch();
   const page = await newPage();
   await assertRegister(page);
+
+  // ---- v. the register vetting, which no page can reach ----
+  // This run sets CONTRACT, which makes the throwaway register the site default, and
+  // checkRegister short-circuits on the site default before any of the vetting runs. So the
+  // only way to execute it is to name a register the site does not ship with, which is what a
+  // visitor who deployed their own from /deploy does. It runs first, before any page has spent
+  // the caller's per-minute budget on this dev server.
+  if (on("v")) {
+    currentStep = "v";
+    const lines = [];
+    let pass = true;
+    const ask = async (query) => {
+      const r = await fetch(`${BASE}/api/packs/L1/status${query}`, { cache: "no-store" });
+      let body = {};
+      try {
+        body = JSON.parse(await r.text());
+      } catch {}
+      return { http: r.status, reason: String(body.reason || ""), uploaded: body.uploaded };
+    };
+    const say = (what, got, want) => {
+      const good = want(got);
+      if (!good) pass = false;
+      lines.push(`${good ? "ok" : "NO"} ${what}: ${got.http}${got.reason ? ` "${got.reason.slice(0, 90)}"` : ""}`);
+    };
+    try {
+      say("no register names the site default", await ask(""), (g) => g.http === 200);
+      say("the site default by name", await ask(`?register=${CONTRACT}`), (g) => g.http === 200);
+      say("a register that is not an address", await ask("?register=not-an-address"), (g) => g.http === 400 && /must be a 0x address/.test(g.reason));
+      // Three addresses Studio has no contract at: each one is a real gen_getContractCode, and
+      // three is all one caller gets in a minute (lib/budget.ts).
+      const madeUp = ["0x00000000000000000000000000000000000000a1", "0x00000000000000000000000000000000000000a2", "0x00000000000000000000000000000000000000a3"];
+      for (const a of madeUp) say(`an address with no contract (${a.slice(-4)})`, await ask(`?register=${a}`), (g) => g.http === 400 && /has no contract/.test(g.reason));
+      const fourth = await ask("?register=0x00000000000000000000000000000000000000a4");
+      say("a fourth new register from the same caller", fourth, (g) => g.http === 503 && /checked many new registers/.test(g.reason));
+      // The finding this closes: one caller spending the lookups used to answer 503 for everybody.
+      say("the site default still answers after that", await ask(""), (g) => g.http === 200);
+      say("a listing id that is a traversal", await ask("?register=" + CONTRACT).then(() => fetch(`${BASE}/api/packs/..%2F..%2Fetc/status`, { cache: "no-store" })).then(async (r) => ({ http: r.status, reason: String(((await r.json().catch(() => ({}))) || {}).reason || "") })), (g) => g.http === 400);
+    } catch (e) {
+      pass = false;
+      lines.push("FAILED: " + String(e.message || e).slice(0, 200));
+    }
+    record("v. the delivery API vets a register it does not ship with, and one caller cannot spend everybody's lookups", pass ? "PASS" : "FAIL", lines.join(" || "));
+  }
 
   // ---- a. reads without a wallet ----
   if (on("a")) {
@@ -1228,7 +1273,7 @@ try {
       const after = await loadPack(page);
       const row = after.rows.find((x) => x.n === n) || { text: "", buttons: [], head: "" };
       const showsText = row.text.includes(REVEAL_PACK.snippet);
-      const canDispute = row.buttons.some((x) => /This breaks a promise/.test(x));
+      const canDispute = row.buttons.some((x) => x.includes(DISPUTE_BUTTON));
       const reportGone = !row.buttons.some((x) => /Report it/.test(x));
       const othersReportable = after.rows.filter((x) => x.n !== n).every((x) => x.buttons.some((y) => /Report it/.test(y)));
       observe(`after the reveal: ${after.counter} delivered as committed; section ${n} head "${row.head}", buttons [${row.buttons.join(" | ")}]`);

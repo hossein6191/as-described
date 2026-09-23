@@ -1,4 +1,4 @@
-# As Described — the delivery API
+# As Described: the delivery API
 
 The contract stores a sha256 per section and moves the money; it never stores the pack.
 The site delivers the text: the seller uploads the sections after `list_pack` confirmed,
@@ -13,34 +13,68 @@ The blob URL is never part of any answer.
 
 ### `GET /api/packs/[id]/status`
 
-`→ 200 { ok: true, uploaded: boolean }`. No wallet, no chain read. Says only whether a
-stored body exists for this listing. `400` for an id that is not `L<digits>`.
+`→ 200 { ok: true, uploaded: boolean }`. No wallet and no contract view call. A register
+other than the site default costs one `gen_getContractCode` the first time it is seen
+(`lib/register-param.ts`). The answer is only whether a stored body exists, never its
+contents or its location.
+
+| check | code | reason |
+|---|---|---|
+| id is `L<digits>` | 400 | `bad listing id` |
+| the caller's per-minute delivery-check budget (`lib/budget.ts`, 60 a minute, its own count) | 429 | `too many delivery checks from this address in the last minute; try again shortly` |
+| `register` is a 0x address | 400 | `register must be a 0x address` |
+| the register runs this contract's code | 400 | `register 0x… does not run the As Described contract (its code hashes to …); deploy one from /deploy` |
+| Studio knows that address | 400 | `Studio has no contract at 0x… (a register deployed in the last minute may not be visible yet; try again shortly)` |
+| the instance may look one more register up | 503 | `the site checked many new registers in the last minute; try again in a minute` |
+| the store answered | 500 | `the store did not answer` |
+| ok | 200 | `{ ok: true, uploaded: boolean }` |
+
+A `503`, `500` or `429` here is a failed check, not "nothing uploaded": `packStatus()` answers
+`{ uploaded: false, checked: false }` and the pages show no delivery badge at all rather than
+telling a visitor a delivered pack is missing. The budget is separate from, and much looser
+than, the chain-read budget the signed routes spend, because a shop page asks this once per
+pack on the shelf; `packStatus()` also reuses one answer for 8 seconds in the tab, so the
+three pages that ask about the same pack cost the store one lookup, not three.
 
 ### `POST /api/packs/[id]/upload`
 
-Body `{ sections: string[], address: "0x…", signature: "0x…" }`.
+Body `{ sections: string[], address: "0x…", signature: "0x…", register: "0x…" }`.
 
 The signed message (`personal_sign`, UTF-8, `\n` between lines, no trailing newline):
 
 ```
 As Described
+Signing proves you are the seller of this listing, so the site stores its sections. It is not a transaction and moves no GEN.
 action: upload-pack
+site: as-described.vercel.app
+chain: 61999
+register: 0x2f75c3c4854aebf095711510b7075e8f0805966f
 listing: L3
-manifest: <sha256 hex of the listing's hashes joined by ",">
+manifest: <sha256 hex of the sent sections' hashes joined by ",">
 ```
 
-Order of checks and answers:
+`site` is the host the request reached (a caller cannot claim another site's host and still
+reach this one) and `register` is lowercase. Both are rebuilt by the route, never taken from
+the body.
+
+Order of checks and answers. Nothing is read from the chain before the id, the register and
+the signature pass:
 
 | check | code | reason |
 |---|---|---|
-| id is `L<digits>`, body is JSON, address is `0x` + 40 hex, 1–20 sections, each 1–4000 chars | 400 | which one failed |
+| id is `L<digits>`, body is JSON, address is `0x` + 40 hex, 1–20 sections, each 1–4000 characters (code points, as the contract counts them) | 400 | which one failed |
+| the register is the site default, or runs this contract's code | 400 / 503 | as in the status table above |
+| the signature recovers to `address` for the message above (viem `verifyMessage`) | 401 | `the signature does not match the upload message for this listing on this site and register` |
+| the caller's per-minute chain-read budget | 429 | `too many pack requests from this address in the last minute; try again shortly` |
 | the listing exists on chain | 404 | `listing L3 does not exist` |
-| the chain answered at all (8 tries over ~40 s) | 503 | `could not reach the network` |
+| the chain answered at all | 503 | `could not reach the network` |
 | `address` equals the listing's `seller` | 403 | `only the listing's seller may upload its pack` |
 | section count equals the committed count | 409 | `the listing commits 8 sections, 3 were sent` |
 | `sha256(sections[i]) == hashes[i]` for every i (exact bytes, no trimming) | 409 | `section 5 does not hash to what the listing committed` |
-| the signature recovers to `address` for the message above (viem `verifyMessage`) | 401 | `the signature does not match the upload message for this listing` |
-| stored | 200 | `{ ok: true, listing, sections: <count> }` |
+| the hashes are exactly a demo pack's | 200 | `{ ok: true, listing, sections: <count>, stored: "demo" }`, and nothing is stored |
+| this deployment has a pack store | 503 | `This deployment has no pack store, so only the demo packs can be listed here…` |
+| a guest register is inside the store quota | 503 | `This deployment stores a limited number of packs per register…` |
+| stored | 200 | `{ ok: true, listing, sections: <count>, stored: "store" }` |
 | storage failed | 500 | `the pack could not be stored` |
 
 Uploading again overwrites (the hashes are fixed by the listing, so the content can only be
@@ -48,31 +82,60 @@ the same bytes again).
 
 ### `POST /api/packs/[id]/pack`
 
-Body `{ order: "O7", address: "0x…", signature: "0x…" }`.
+Body `{ order: "O7", address: "0x…", signature: "0x…", issued: "2026-09-23T11:05Z", register: "0x…" }`.
 
 The signed message:
 
 ```
 As Described
+Signing proves you are the buyer of this order, so the site shows you its sections. It is not a transaction and moves no GEN.
 action: read-pack
+site: as-described.vercel.app
+chain: 61999
+register: 0x2f75c3c4854aebf095711510b7075e8f0805966f
+listing: L3
 order: O7
+issued: 2026-09-23T11:05Z
 ```
+
+`issued` is an ISO-8601 instant to the minute, and the only line the route takes from the
+body: everything else is rebuilt from the host, the checked register and the listing in the
+path. The route refuses an `issued` that is more than 5 minutes ahead of it or more than 7
+days behind it, which is what bounds the signature in time (`READ_SIG_SKEW_MS` and
+`READ_SIG_MAX_AGE_MS` in `lib/api.ts`).
 
 | check | code | reason |
 |---|---|---|
 | ids and address well-formed, body is JSON | 400 | which one failed |
-| the signature recovers to `address` | 401 | `the signature does not match the read message for this order` |
+| the register is the site default, or runs this contract's code | 400 / 503 | as in the status table above |
+| `issued` is readable and inside its window | 401 | `this signature is older than 7 days or carries no readable time; sign the read message again` |
+| the signature recovers to `address` for the message above | 401 | `the signature does not match the read message for this order on this site and register` |
+| the caller's per-minute chain-read budget | 429 | `too many pack requests from this address in the last minute; try again shortly` |
 | the order exists on chain | 404 | `order O7 does not exist` |
 | the chain answered | 503 | `could not reach the network` |
 | `order.listing == [id]` | 403 | `order O7 is not for listing L3` |
 | `address == order.buyer` | 403 | `only the order's buyer may read this pack` |
-| a pack was uploaded | 404 | `the seller has not uploaded this pack yet` |
 | ok | 200 | `{ ok: true, order, listing, sections: string[], uploadedAt }` |
+| served from the repository instead of the store | 200 | the same, plus `source: "demo"` and `uploadedAt: ""` |
+| a pack was uploaded | 404 | `the seller has not uploaded this pack yet` |
 | the stored body cannot be opened (wrong `PACK_SECRET`) | 500 | `the stored pack could not be opened` |
 
-The signature is valid for the order for ever (there is no nonce): it grants reading a pack
-the buyer already paid for, nothing else. The order page caches it in `localStorage` under
-`as-described.read-sig.<order>` so the wallet is asked once per order.
+Inside its window the signature is a bearer token: it grants reading a pack the buyer already
+paid for, from any client, and nothing ties it to a session or an address other than the
+signer's. The order page caches it in `localStorage` under
+`ad:sig:<register>:<address>:<order>`, with the `issued` minute beside it, so the wallet is
+asked once per order per wallet per register and the entry stops being used when it expires.
+An entry under the older key, which named only the order and so could hand one wallet's
+signature to another, is deleted when the page loads.
+
+### Demo packs
+
+A listing whose committed hashes are exactly a demo pack's section hashes is answered from
+`lib/demo-store.ts`, with no stored body: the text ships with the site in `lib/demo-packs.ts`.
+Matching is by the hashes on chain, never by title or id, so a listing that committed
+different bytes never receives the demo text. `upload` then answers `stored: "demo"` and
+stores nothing; `pack` answers `source: "demo"`. This is what lets a visitor with no blob
+store sell and deliver a pack.
 
 ### `GET /api/snapshot`
 
@@ -83,21 +146,34 @@ never use the snapshot: an upload or a read is authorised by the chain or not at
 
 ## Client helpers (`lib/api.ts`)
 
-`packStatus(listing)`, `uploadPack(listing, sections, address, signature)`,
-`fetchPack(listing, order, address, signature)`, plus `uploadMessage(listing, manifest)`,
-`readMessage(order)`, `sha256Hex(text)` (WebCrypto) and `manifestOf(hashes)`. A fetch that
-does not reach the site comes back as `{ ok: false, reason: "could not reach the site" }`;
-nothing throws.
+`packStatus(listing, { demo })` → `{ uploaded, checked }`, `uploadPack(listing, sections,
+address, signature)`, `fetchPack(listing, order, address, signature, issued)`, plus
+`uploadMessage(listing, manifest)`, `readMessage(order, listing, issued)`, `issuedNow()`,
+`issuedIsFresh(issued)`, `sha256Hex(text)` (WebCrypto) and `manifestOf(hashes)`. Every helper
+adds the register the browser reads. A fetch that does not reach the site comes back as
+`{ ok: false, reason: "could not reach the site" }`; nothing throws, and `checked: false` is
+how a caller is told the site could not find out rather than found nothing.
 
 ## Storage (`lib/store.ts`)
 
-- `BLOB_READ_WRITE_TOKEN` set → Vercel Blob, pathname `packs/<id>.json`,
-  `addRandomSuffix: false`, `allowOverwrite: true`, public access; reads bypass the CDN cache.
-- otherwise → `.data/packs/<id>.json` under the project root (`.data/` is created on first
-  write and git-ignored). This is the dev store; on Vercel the filesystem is not durable, so
-  set the token there.
+- `BLOB_READ_WRITE_TOKEN` set → Vercel Blob, pathname `packs/<register>/<listing>.json`,
+  `addRandomSuffix: false`, `allowOverwrite: true`, `access: "private"` (the object is not
+  served by URL at all); reads bypass the CDN cache.
+- otherwise → `.data/packs/<register>/<listing>.json` under the project root (`.data/` is
+  created on first write and git-ignored). This is the dev store; on Vercel the filesystem is
+  not durable, so set the token there.
+- a bucket with `BLOB_READ_WRITE_TOKEN` but no `PACK_SECRET` is treated as **no store at all**,
+  rather than storing plaintext: `upload` then answers the 503 above.
 
-Ids are checked against `^L\d{1,9}$` before they touch a path or a pathname.
+A register other than this deployment's own is a guest, and a guest may keep at most
+`MAX_GUEST_PACKS` (25) packs and `MAX_GUEST_BYTES` (2 MiB) here, with at most
+`MAX_GUEST_REGISTERS` (50) guest registers storing anything at all. Registers are free to
+deploy and Studio GEN is free, so without those one visitor could fill the deployment's bucket
+a listing at a time. Replacing a pack the same register already stored is never refused,
+because the listing fixes its hashes.
+
+Ids are checked against `^L\d{1,9}$`, and registers against `^0x[0-9a-fA-F]{40}$` (or `mock`),
+before they touch a path or a pathname.
 
 ## Encryption at rest (`lib/crypto.ts`)
 
@@ -113,7 +189,8 @@ garbage). A public blob URL therefore leaks nothing but the size.
 
 With `PACK_SECRET` **unset** the envelope is `{ "v": 1, "alg": "none", "data": … }`: plaintext,
 for local development only. A plaintext envelope still opens after a secret is set; an
-encrypted one cannot be opened with a different secret, and there is no re-keying.
+encrypted one cannot be opened with a different secret, and there is no re-keying. On a
+deployment with a blob store the plaintext envelope is refused rather than written.
 
 ## Mock mode (`NEXT_PUBLIC_MOCK=1`)
 
@@ -163,3 +240,11 @@ Every request names the register it is about: `register` in the JSON body of `up
 visitor's own choice from `/deploy`, else the site default). The routes check the chain on that
 register and key the stored pack by `(register, listing)`, so a pack uploaded for `L3` on one
 register is never served for `L3` on another. Without the parameter the site default applies.
+
+A register that is not the site default is used only once its deployed code is known to be this
+contract: the sha256 of `gen_getContractCode` must equal the sha256 of
+`public/contracts/as_described.py` or of an earlier release listed in `lib/register-param.ts`.
+The answer is remembered per server instance in a bounded map, and "Studio has no contract
+there" is kept for 15 seconds only, because that is Studio's answer for about a minute after a
+deploy. The lookup itself is a chain read with no signature in front of it, so it is budgeted:
+3 unknown registers per caller per minute and 8 for the whole instance.

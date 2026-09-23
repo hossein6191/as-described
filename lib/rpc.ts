@@ -266,11 +266,13 @@ export type RetryOptions = {
 };
 
 /**
- * A route handler's budget for one read: three tries, its own, so a request never holds the
- * site's slots. Studio drops a connection now and then, and a buyer pressing "Sign to read the
- * pack" must not lose their pack to one of them; the deadline below keeps the three tries short.
+ * A route handler's budget for one read: two tries, its own, so a request never holds the site's
+ * slots. Studio drops a connection now and then, and a buyer pressing "Sign to read the pack"
+ * must not lose their pack to one of them, so there is a second try; there is no third, because
+ * the pack route makes two view calls and every try is one more gen_call out of Studio's 30 a
+ * minute, which the same routes' own reads need. The deadline below keeps both tries short.
  */
-export const ROUTE_RETRY: RetryOptions = { tries: 3, ownBudget: true };
+export const ROUTE_RETRY: RetryOptions = { tries: 2, ownBudget: true };
 
 /** How long one read on the server waits before it is given up and tried again on a new connection. */
 export const ROUTE_READ_MS = 8000;

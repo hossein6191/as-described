@@ -14,6 +14,7 @@ const plus = (iso: string, seconds: number) => new Date(new Date(iso).getTime() 
 
 /** The contract's limits and clocks, as in contracts/as_described.py. */
 const MAX_SECTION_CHARS = 4000;
+const MAX_MISSING_REPORTS = 3;
 const REVEAL_HOURS = 24;
 const STALE_HOURS = 24;
 const LISTINGS_PAGE = 25;
@@ -37,7 +38,7 @@ function verdictLineOf(o: Order, oversize = false): string {
   if (o.status === "settled" && o.verdict === "keeps")
     return `A majority of the validators found that section ${s} keeps promise ${p}, so the seller got the price and the bond: ${genText(toSeller)}.`;
   if (o.status === "settled" && o.verdict === "unclear")
-    return `A majority of the validators could not tell whether section ${s} breaks promise ${p}, so the seller got the price (${genText(toSeller)}) and the buyer got the bond back (${genText(toBuyer)}).`;
+    return `The validators did not reach a clear answer on whether section ${s} breaks promise ${p}, so the seller got the price (${genText(toSeller)}) and the buyer got the bond back (${genText(toBuyer)}).`;
   if (o.status === "settled_stale")
     return `No verdict was stored within ${STALE_HOURS} hours of the dispute on section ${s} against promise ${p}, so it was settled by rule: the seller got the price (${genText(toSeller)}) and the buyer got the bond back (${genText(toBuyer)}).`;
   if (o.status === "released")
@@ -127,6 +128,7 @@ const blankOrder = (id: string, l: Listing, who: string, openedAt: string): Orde
   revealedText: "",
   missingIndex: -1,
   missingAt: "",
+  missingReportsLeft: MAX_MISSING_REPORTS,
   paidBuyer: "0",
   paidSeller: "0",
   windowOpen: true,
@@ -180,6 +182,7 @@ const orders: Order[] = [];
     missingIndex: 6,
     missingAt: "2026-09-18T12:40:00.000Z",
     revealed: [{ index: 6, text: DEMO_PACKS[1].sections[6] }],
+    missingReportsLeft: MAX_MISSING_REPORTS - 1,
   });
   for (const o of [o1, o2, o4]) o.verdictLine = verdictLineOf(o);
   orders.push(o1, o2, o3, o4, o5);
@@ -399,11 +402,25 @@ export async function write(fn: WriteFn, args: string[], valueAtto?: bigint): Pr
     else if (o.status !== "paid") refuse("only a paid order can report a missing section; this one is " + o.status);
     else if (o.revealed.some((r) => r.index === section)) {
       refuse("section " + (section + 1) + " is already on chain; read it from the order");
+    } else if ((o.missingReportsLeft ?? MAX_MISSING_REPORTS) <= 0) {
+      refuse("a buyer reports at most " + MAX_MISSING_REPORTS + " sections missing per order; a pack that did not arrive ends in a refund");
     } else {
       o.status = "missing";
       o.missingIndex = section;
       o.missingAt = now();
-      result = { ok: true, order: o.id, status: "missing", missing_index: section, reveal_hours: REVEAL_HOURS };
+      o.missingReportsLeft = (o.missingReportsLeft ?? MAX_MISSING_REPORTS) - 1;
+      result = { ok: true, order: o.id, status: "missing", missing_index: section, reports_left: o.missingReportsLeft, reveal_hours: REVEAL_HOURS };
+    }
+  } else if (fn === "withdraw_dispute") {
+    const o = find(args[0]);
+    if (!o) refuse("no order named " + args[0]);
+    else if (o.status !== "disputed") refuse("only a disputed order can be withdrawn; this one is " + o.status);
+    else {
+      const bond = BigInt(o.bondAtto);
+      o.status = "paid";
+      o.bondAtto = "0";
+      o.disputedAt = "";
+      result = { ok: true, order: o.id, status: "paid", to_buyer: String(bond), deadline_at: o.deadlineAt };
     }
   } else if (fn === "reveal") {
     const o = find(args[0]);

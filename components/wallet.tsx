@@ -13,6 +13,7 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { MetalButton } from "@/components/ui/liquid-glass-button";
+import { cleanWalletError } from "@/components/use-tx";
 import {
   Dialog,
   DialogContent,
@@ -104,9 +105,11 @@ const defaultState: WalletState = {
 
 const WalletContext = React.createContext<WalletState>(defaultState);
 
+// A provider's own message is long JSON; the banner and the start-here line show the sentence
+// a person can act on, the same one every transaction on the site shows (components/use-tx.ts).
 const errorText = (e: unknown, fallback: string) =>
   e && typeof e === "object" && "message" in e && (e as { message?: string }).message
-    ? String((e as { message: string }).message)
+    ? cleanWalletError(String((e as { message: string }).message))
     : fallback;
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -126,6 +129,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // re-read a few more times; an empty wallet stays at 0 after that.
   const laterRead = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const zeroChecks = React.useRef(0);
+  // Counts scheduled reads that have finished. A zero balance re-read as zero sets the same state,
+  // which React bails out of, and a dropped read sets none at all, so neither re-runs the effect
+  // below on its own: this counter is what does, and it changes whether the read worked or not.
+  const [zeroTick, setZeroTick] = React.useState(0);
   // The account being shown right now, readable from a callback that started earlier: every
   // late answer (a scheduled read, a faucet, a balance watch) is dropped once it no longer
   // matches, so one account's number or error never lands under another's address.
@@ -158,7 +165,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (laterRead.current) clearTimeout(laterRead.current);
       laterRead.current = setTimeout(() => {
         laterRead.current = undefined;
-        void refreshBalanceFor(addr);
+        void refreshBalanceFor(addr).finally(() => {
+          if (shown.current === addr) setZeroTick((n) => n + 1);
+        });
       }, 4000);
     },
     [refreshBalanceFor],
@@ -229,7 +238,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!address || balanceAtto !== 0n || zeroChecks.current >= 3) return;
     zeroChecks.current++;
     refreshBalanceLater(address);
-  }, [address, balanceAtto, refreshBalanceLater]);
+  }, [address, balanceAtto, zeroTick, refreshBalanceLater]);
   React.useEffect(
     () => () => {
       if (laterRead.current) clearTimeout(laterRead.current);

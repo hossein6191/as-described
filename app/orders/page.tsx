@@ -443,7 +443,8 @@ function MyListing({
       // A demo pack's text ships with the site: it is delivered without asking the store.
       isDemoHashes(hashKey ? hashKey.split(",") : [])
         // demo is false here, so the status route answers from the store alone: no second listing read.
-        .then((demo) => demo || packStatus(l.id, { demo: false }).then((s) => s.uploaded))
+        // null when the store never answered: the seller is never told a delivered pack is missing.
+        .then((demo) => (demo ? true : packStatus(l.id, { demo: false }).then((s) => (s.checked ? s.uploaded : null))))
         .then((u) => alive && setUploaded(u))
         .catch(() => alive && setUploaded(null));
     }

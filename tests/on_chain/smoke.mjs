@@ -8,12 +8,17 @@
  * lists its own pack and reads the ids the contract assigned, so a deployment
  * can be reused.
  *
- * Three packs: a vegetarian recipe pack whose recipe 5 fries bacon (the buyer
- * disputes it and is paid back with the bond), its honest twin (the buyer
- * disputes recipe 3 against the 30-minute promise and loses the bond to the
- * seller), and a template pack with a 5-minute window (released to the seller
- * with no dispute; a second order goes missing → revealed → paid again, twice,
- * and a section already on chain can never be reported missing again).
+ * Four packs: a vegetarian recipe pack whose recipe 5 fries bacon (the buyer
+ * disputes it and is paid back with the bond), a pack whose last chapter is
+ * about twelve thousand characters, which is the only proof that a Studio
+ * write carries a section past the 4,000-character cap and that such a
+ * dispute settles breaks by rule with no model asked (and, on the way, that a
+ * buyer can withdraw a dispute and get the bond back), its honest twin (the
+ * buyer disputes recipe 3 against the 30-minute promise and loses the bond to
+ * the seller), and a template pack with a 5-minute window (released to the
+ * seller with no dispute; a second order goes missing → revealed → paid
+ * again, three times, a section already on chain can never be reported
+ * missing again, and a fourth report is refused by the per-order cap).
  * Every refusal the contract makes is exercised as a signed transaction, and
  * every payout is read from balances after finalisation. Each final order is
  * checked for the sentence the contract itself wrote, and the batch listings()
@@ -57,6 +62,7 @@ const send = async (client, fn, args = [], value) => { const r = await wait(awai
 // a judged call whose round split is retried once: nothing was applied, so asking again is safe
 const judged = async (client, fn, args) => { let r = await send(client, fn, args); if (!r.applied && r.exec !== "ERROR" && r.msg !== "TIMEOUT") { console.log("      round not applied (" + tally(r) + "); asking again"); r = await send(client, fn, args); } return r; };
 const view = async (fn, args = []) => { for (let i = 0; i < 6; i++) { try { return await rd.readContract({ address: A, functionName: fn, args }); } catch (e) { await sleep(5000); if (i === 5) return "VIEW ERROR " + fn + ": " + (e?.shortMessage || String(e)).slice(0, 100); } } };
+const _digitsOf = (id) => Number(String(id).replace(/\D/g, "")) || 0;
 const parse = (s) => { try { return JSON.parse(String(s)); } catch (e) { return { error: String(s).slice(0, 120) }; } };
 
 // ---------- the packs ----------
@@ -125,6 +131,44 @@ ok("the contract wrote the sentence for this order", /^A majority of the validat
 ok("the sentence carries no text from the pack", !String(o1.verdict_line).includes("bacon") && !String(o1.verdict_line).includes("Recipe"));
 const again = await send(cx, "judge", [O1, RECIPE_5_BACON]);
 ok("a verdict is final", again.exec === "ERROR" && again.msg.includes("already judged"));
+
+// ---------- pack 4: a section the seller committed past the published cap ----------
+// Two things are proved here that no offline test can prove. One: Studio carries a judge()
+// argument of about twelve thousand characters, which is what the by-rule remedy rests on; if a
+// write could not carry it, the branch would be unreachable and the buyer would be back in a
+// dispute nobody can judge. Two: the way out of a dispute, which is the buyer's alone.
+const BIG = "Chapter 9: the long method. " + "Stir the pot slowly and keep the heat low. ".repeat(285);
+ok("the oversize section is past the contract's cap", BIG.length > 4000, `${BIG.length} characters, ${Buffer.byteLength(BIG, "utf8")} bytes of calldata`);
+const l4 = await listPack("Slow Cooking, three long chapters", "notes", ["Every chapter names its total time.", "No chapter needs a pressure cooker."], [RECIPES[0], RECIPES[1], BIG], GEN / 2n, 3 * 86400);
+const L4 = l4.j?.listing;
+ok("a pack may commit a hash of a section longer than the cap", l4.j?.ok === true && l4.j?.sections === 3, `${L4} · list_pack takes hashes only`);
+const buy5 = await send(cb, "buy", [L4], GEN / 2n);
+const O5 = buy5.j?.order;
+ok("buy pack 4", buy5.j?.ok === true, String(O5));
+const bond4 = BigInt(String(await view("bond_for", [L4])));
+const beforeDispute = await balance(buyer.address);
+const wrongSection = await send(cb, "open_dispute", [O5, "0", "0"], bond4);
+ok("the buyer disputes the wrong section first", wrongSection.j?.ok === true && wrongSection.j?.status === "disputed");
+const strangerWithdraw = await send(cx, "withdraw_dispute", [O5]);
+ok("a stranger cannot withdraw somebody else's dispute", strangerWithdraw.exec === "ERROR" && strangerWithdraw.msg.includes("only the buyer"), strangerWithdraw.msg.slice(0, 70));
+const withdraw = await send(cb, "withdraw_dispute", [O5]);
+ok("the buyer withdraws, the order is paid again and the bond comes back", withdraw.j?.ok === true && withdraw.j?.status === "paid" && withdraw.j?.to_buyer === String(bond4), tally(withdraw));
+ok("the bond is really back in the buyer's wallet", (await settledBack(buyer.address, beforeDispute)) === beforeDispute);
+const o5a = parse(await view("order", [O5]));
+ok("the withdrawn order keeps its deadline and holds no bond", o5a.status === "paid" && o5a.bond === "0" && o5a.deadline_at === buy5.j?.deadline_at && o5a.verdict === "", `${o5a.status} · deadline ${o5a.deadline_at}`);
+const nothingToWithdraw = await send(cb, "withdraw_dispute", [O5]);
+ok("a paid order has no dispute to withdraw", nothingToWithdraw.exec === "ERROR" && nothingToWithdraw.msg.includes("only a disputed order"), nothingToWithdraw.msg.slice(0, 70));
+const dispute4 = await send(cb, "open_dispute", [O5, "2", "0"], bond4);
+ok("the buyer disputes again, this time the oversize chapter", dispute4.j?.ok === true && dispute4.j?.section_index === 2, tally(dispute4));
+const bb4 = await balance(buyer.address);
+const j4 = await send(cx, "judge", [O5, BIG]);
+ok("a judge transaction carries the whole oversize section", j4.applied && j4.j?.ok === true, `${Buffer.byteLength(BIG, "utf8")} bytes of argument · ${tally(j4)}`);
+ok("it is settled breaks by rule, with no validator asked", j4.j?.verdict === "breaks" && j4.j?.by_rule === true && j4.j?.break_answer === "" && j4.j?.keep_answer === "", `by_rule ${j4.j?.by_rule}, answers "${j4.j?.break_answer}"/"${j4.j?.keep_answer}"`);
+ok("and the buyer received the price plus the bond", (await moved(buyer.address, bb4)) - bb4 === GEN / 2n + bond4, `+${((await balance(buyer.address)) - bb4) / 10n ** 16n} / 100 GEN`);
+const o5 = parse(await view("order", [O5]));
+ok("the contract's sentence says it was decided by rule, not by the validators",
+   String(o5.verdict_line).includes("longer than the 4000 characters") && String(o5.verdict_line).includes("without asking the validators"),
+   String(o5.verdict_line).slice(0, 160));
 }
 
 if (on("B")) {
@@ -184,6 +228,14 @@ const reveal2 = await send(cs, "reveal", [O4, PACK3[3]]);
 ok("the seller reveals template 4 too", reveal2.j?.ok === true && reveal2.j?.status === "paid");
 const o4b = parse(await view("order", [O4]));
 ok("both revealed sections are listed by index", JSON.stringify(o4b.revealed) === JSON.stringify([{ index: 1, text: PACK3[1] }, { index: 3, text: PACK3[3] }]));
+const missing3 = await send(cb, "report_missing", [O4, "0"]);
+ok("a third section may be reported, and the order says none is left", missing3.j?.ok === true && missing3.j?.missing_reports === 3 && missing3.j?.reports_left === 0);
+const reveal3 = await send(cs, "reveal", [O4, PACK3[0]]);
+ok("the seller reveals template 1 too", reveal3.j?.ok === true && reveal3.j?.status === "paid");
+const capped = await send(cb, "report_missing", [O4, "2"]);
+ok("a fourth section cannot be reported: the walk through the pack is capped", capped.exec === "ERROR" && capped.msg.includes("at most 3 sections missing per order"), capped.msg.slice(0, 90));
+const o4c = parse(await view("order", [O4]));
+ok("the order view counts the reports and what is left", o4c.missing_reports === 3 && o4c.missing_reports_left === 0 && o4c.revealed?.length === 3);
 const remaining = deadline3 + 15000 - Date.now();
 if (remaining > 0) { console.log(`      waiting ${Math.ceil(remaining / 1000)} s for the window to close`); await sleep(remaining); }
 const bs3 = await balance(seller.address);
@@ -205,7 +257,13 @@ ok("a limit that is not a number reads the whole page", clamped.rows?.length ===
 const past = parse(await view("listings", [String(page.total + 5), "5"]));
 ok("an offset past the end reads no rows", Array.isArray(past.rows) && past.rows.length === 0 && past.total === page.total);
 const ledger = parse(await view("ledger", ["10"]));
-ok("ledger reads the last orders newest first", Array.isArray(ledger) && ledger.length >= 1 && ledger[0].order === O4, ledger.map((r) => `${r.order}:${r.status}`).join(" "));
+// Newest first, said without assuming this phase is the only one that bought here: the ids
+// must fall as the rows go down, and this phase's own last order must be among them. A
+// deployment reused by another phase (or by the site harness) has newer orders on top.
+const ledgerIds = Array.isArray(ledger) ? ledger.map((r) => _digitsOf(r.order)) : [];
+const descending = ledgerIds.every((n, i) => i === 0 || ledgerIds[i - 1] > n);
+ok("ledger reads the last orders newest first", ledgerIds.length >= 1 && descending && ledger.some((r) => r.order === O4),
+   ledger.map((r) => `${r.order}:${r.status}`).join(" "));
 const rules = parse(await view("rules"));
 ok("the rules are published by the contract", rules.verdicts?.length === 3 && String(rules.who?.judge).includes("anyone"));
 }

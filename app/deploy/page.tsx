@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { TxRail } from "@/components/tx-rail";
+import { cleanWalletError } from "@/components/use-tx";
 import { useWallet } from "@/components/wallet";
 import { sha256Hex } from "@/lib/api";
 import { RATE_LIMITED, addressUrl, contractAddress, deploy, deployedAddress, isMock, readStats, txUrl, type TxStatus } from "@/lib/chain";
@@ -142,7 +143,8 @@ export default function DeployPage() {
       const h = await deploy(code);
       setHash(h);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // The commonest outcome here is Reject in the wallet: say that, not viem's whole blob.
+      setError(cleanWalletError(e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(false);
     }

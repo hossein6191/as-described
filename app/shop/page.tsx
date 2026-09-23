@@ -18,20 +18,23 @@ import { mockPackUploaded } from "@/lib/chain-mock";
 import { DEMO_SELLER } from "@/lib/config";
 import { gen } from "@/lib/format";
 
-type Row = { listing: Listing; uploaded: boolean };
+/** `uploaded` is null when the delivery store never answered: a failed read, not "nothing uploaded". */
+type Row = { listing: Listing; uploaded: boolean | null };
 
 /** Below this many open packs the shop says how more get here. */
 const FEW_PACKS = 6;
 
-async function uploadedOf(l: Listing): Promise<boolean> {
+async function uploadedOf(l: Listing): Promise<boolean | null> {
   if (isMock) return mockPackUploaded(l.id);
   // A demo pack's text ships with the site: no delivery store, no status call.
   if (await isDemoHashes(l.hashes)) return true;
   try {
     // The question is already answered, so the status route must not read this listing again.
-    return (await packStatus(l.id, { demo: false })).uploaded;
+    const s = await packStatus(l.id, { demo: false });
+    // One 503 from the route must not put "Not delivered yet" on somebody else's delivered pack.
+    return s.checked ? s.uploaded : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -41,7 +44,7 @@ async function readShop() {
   const checks = await readEach(all.data, uploadedOf);
   const rows: Row[] = all.data.map((listing, i) => {
     const c = checks[i];
-    return { listing, uploaded: c.status === "fulfilled" ? c.value : false };
+    return { listing, uploaded: c.status === "fulfilled" ? c.value : null };
   });
   // Open packs first, newest first within each group; closed ones stay visible for their record.
   const order = (r: Row) => (r.listing.open ? 0 : 1);
@@ -104,8 +107,9 @@ export default function ShopPage() {
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {rows.map(({ listing: l, uploaded }) => {
-                  const badge = !l.open ? "Closed" : !uploaded ? "Not delivered yet" : l.seller.toLowerCase() === demoSeller ? "Demo" : undefined;
-                  const tone = !l.open ? "muted" : !uploaded ? "warn" : "primary";
+                  // uploaded === null: the site could not check, so it says nothing about delivery.
+                  const badge = !l.open ? "Closed" : uploaded === false ? "Not delivered yet" : uploaded === null ? undefined : l.seller.toLowerCase() === demoSeller ? "Demo" : undefined;
+                  const tone = !l.open ? "muted" : uploaded === false ? "warn" : "primary";
                   return (
                     <ProductCard
                       key={l.id}

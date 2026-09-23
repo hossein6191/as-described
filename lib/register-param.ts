@@ -22,9 +22,14 @@ import path from "node:path";
 import { getAddress } from "viem";
 import { MOCK_REGISTER } from "./api";
 import { isMock, RPC_URL } from "./chain";
+import { RATE_LIMIT_CODE, startCooldown, waitForCooldown } from "./rpc";
+import { callerOf, createBoundedMemo, SHARED_CALLER, takeChainRead, takeDeliveryCheck, takeLookup, TOO_MANY_CHECKS, TOO_MANY_LOOKUPS, TOO_MANY_READS } from "./budget";
 import { siteRegister, isAddress } from "./register";
 
 export { MOCK_REGISTER };
+// The budgets live in lib/budget.ts, which imports nothing so it can be unit-tested; the routes
+// keep importing them from here, where the rest of a request's vetting is.
+export { callerOf, SHARED_CALLER, takeChainRead, takeDeliveryCheck, takeLookup, TOO_MANY_CHECKS, TOO_MANY_LOOKUPS, TOO_MANY_READS };
 
 /** sha256 of the deployed bytes of earlier releases whose registers the delivery API still serves. */
 const EARLIER_RELEASES = [
@@ -36,8 +41,7 @@ const CONTRACT_FILE = path.join(process.cwd(), "public", "contracts", "as_descri
 const MAX_REMEMBERED = 256;
 /** "No contract there" can be Studio's answer for a minute after a deploy, so it is kept only briefly. */
 const MISSING_TTL_MS = 15_000;
-/** Code lookups for unknown registers one instance makes per minute; past that it answers 503. */
-const LOOKUPS_PER_MINUTE = 20;
+/** How long one gen_getContractCode is given before the lookup is abandoned. */
 const LOOKUP_TIMEOUT_MS = 8_000;
 
 export const NO_SITE_REGISTER = "this site is not pointed at a register yet";
@@ -64,83 +68,19 @@ type Outcome =
   | { kind: "missing" }
   | { kind: "unreachable" };
 
-const remembered = new Map<string, { outcome: Outcome; at: number }>();
+const remembered = createBoundedMemo<Outcome>(MAX_REMEMBERED);
 const pending = new Map<string, Promise<Outcome>>();
-let lookupTimes: number[] = [];
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
+/** An answer worth keeping: "unreachable" says nothing about the register, so it is not kept. */
 function remember(key: string, outcome: Outcome): void {
   if (outcome.kind === "unreachable") return;
-  remembered.delete(key);
-  while (remembered.size >= MAX_REMEMBERED) {
-    const oldest = remembered.keys().next().value;
-    if (oldest === undefined) break;
-    remembered.delete(oldest);
-  }
-  remembered.set(key, { outcome, at: Date.now() });
+  remembered.remember(key, outcome);
 }
 
-function recalled(key: string): Outcome | null {
-  const hit = remembered.get(key);
-  if (!hit) return null;
-  if (hit.outcome.kind === "missing" && Date.now() - hit.at > MISSING_TTL_MS) {
-    remembered.delete(key);
-    return null;
-  }
-  return hit.outcome;
-}
-
-function takeLookup(now: number): boolean {
-  lookupTimes = lookupTimes.filter((t) => now - t < 60_000);
-  if (lookupTimes.length >= LOOKUPS_PER_MINUTE) return false;
-  lookupTimes.push(now);
-  return true;
-}
-
-// ---- the chain reads the delivery routes make, per caller ------------------------------------
-
-/** Chain reads one caller may cause through the delivery routes in a minute. */
-const READS_PER_MINUTE = 10;
-/** How many callers one server instance keeps a count for; past that the oldest is dropped. */
-const MAX_CALLERS = 2000;
-
-export const TOO_MANY_READS = "too many pack requests from this address in the last minute; try again shortly";
-
-const readTimes = new Map<string, number[]>();
-
-/** The caller a budget is kept for: the client address the host puts in x-forwarded-for, else one shared count. */
-export function callerOf(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for") || "";
-  const first = (forwarded.split(",")[0] || "").trim();
-  return first.slice(0, 64) || "all";
-}
-
-/**
- * True when this caller may spend another chain read here, and counts it.
- *
- * Signing a read message is free and local, so the 401 gate alone does not stop anybody sending
- * pack requests in a loop with a key of their own; each one costs the server up to ROUTE_RETRY
- * gen_call out of Studio's 30 a minute, and once Studio rate-limits, every later server read waits
- * out the cooldown. Ten a minute is far above anything an honest buyer or seller does, and it caps
- * what one caller can take from everybody else at one bucketful.
- */
-export function takeChainRead(caller: string, now: number = Date.now()): boolean {
-  const recent = (readTimes.get(caller) ?? []).filter((t) => now - t < 60_000);
-  readTimes.delete(caller);
-  if (recent.length >= READS_PER_MINUTE) {
-    readTimes.set(caller, recent);
-    return false;
-  }
-  recent.push(now);
-  while (readTimes.size >= MAX_CALLERS) {
-    const oldest = readTimes.keys().next().value;
-    if (oldest === undefined) break;
-    readTimes.delete(oldest);
-  }
-  readTimes.set(caller, recent);
-  return true;
-}
+const recalled = (key: string): Outcome | null =>
+  remembered.recalled(key, (o, age) => o.kind === "missing" && age > MISSING_TTL_MS);
 
 /** The code hashes a register may run: the repository file (read fresh, it is small) and the earlier releases. */
 async function acceptedHashes(): Promise<Set<string>> {
@@ -164,6 +104,7 @@ function codeBytes(result: unknown): Uint8Array | null {
 async function lookUp(address: string): Promise<Outcome> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      await waitForCooldown("gen");
       const res = await fetch(RPC_URL, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -171,12 +112,20 @@ async function lookUp(address: string): Promise<Outcome> {
         cache: "no-store",
         signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
       });
-      if (res.status === 429) return { kind: "unreachable" }; // rate-limited: say so, never retry into it
+      if (res.status === 429) {
+        // The routes' own reads wait out this cooldown; a lookup that ignored it would keep
+        // spending Studio's budget while every other read on the instance waited.
+        startCooldown(undefined, Date.now(), "gen");
+        return { kind: "unreachable" }; // rate-limited: say so, never retry into it
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { result?: unknown; error?: { code?: number; message?: string } };
       if (body.error) {
         if (/not found/i.test(body.error.message ?? "")) return { kind: "missing" };
-        if (body.error.code === -32029) return { kind: "unreachable" };
+        if (body.error.code === RATE_LIMIT_CODE) {
+          startCooldown(undefined, Date.now(), "gen");
+          return { kind: "unreachable" };
+        }
         throw new Error(body.error.message ?? "rpc error");
       }
       const bytes = codeBytes(body.result);
@@ -194,7 +143,7 @@ async function lookUp(address: string): Promise<Outcome> {
  * The register a request names (or the site default when it names none), checked as described
  * above. `{ ok: false }` carries the status and reason the route answers with, before any chain read.
  */
-export async function checkRegister(candidate: unknown): Promise<RegisterCheck> {
+export async function checkRegister(candidate: unknown, caller: string = SHARED_CALLER): Promise<RegisterCheck> {
   if (mockAllowed) return { ok: true, register: MOCK_REGISTER };
   const named = typeof candidate === "string" ? candidate.trim() : "";
   if (named && !isAddress(named)) return { ok: false, status: 400, reason: "register must be a 0x address" };
@@ -209,13 +158,7 @@ export async function checkRegister(candidate: unknown): Promise<RegisterCheck> 
   if (!outcome) {
     let running = pending.get(key);
     if (!running) {
-      if (!takeLookup(Date.now())) {
-        return {
-          ok: false,
-          status: 503,
-          reason: "the site checked many new registers in the last minute; try again in a minute",
-        };
-      }
+      if (!takeLookup(caller)) return { ok: false, status: 503, reason: TOO_MANY_LOOKUPS };
       running = lookUp(register).finally(() => pending.delete(key));
       pending.set(key, running);
     }

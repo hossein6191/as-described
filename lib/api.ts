@@ -33,6 +33,21 @@ import { CHAIN_ID, contractAddress, isMock, readListing } from "./chain";
 /** `checked` is false when the site could not tell (the route refused or never answered), not "nothing uploaded". */
 export type PackStatus = { uploaded: boolean; checked: boolean };
 
+/** How long one delivery answer is reused in this tab before the store is asked again. */
+const STATUS_MEMO_MS = 8000;
+const statusMemo = new Map<string, { value: PackStatus; at: number }>();
+function keepStatus(key: string, value: PackStatus): PackStatus {
+  // A failed check is not kept: the next page to ask should get a real answer, not this one.
+  if (value.checked) statusMemo.set(key, { value, at: Date.now() });
+  if (statusMemo.size > 200) statusMemo.delete(statusMemo.keys().next().value as string);
+  return value;
+}
+
+/** Forgets what the site knows about delivery, so the next ask reaches the store (after an upload). */
+export function forgetPackStatus(): void {
+  statusMemo.clear();
+}
+
 /**
  * `status` is the HTTP status the route answered with, or 0 when the site was never reached.
  * Callers need it to tell one refusal from another without matching words in the reason:
@@ -76,17 +91,24 @@ export async function storageStatus(): Promise<StorageStatus> {
  * custom pack on a page that lists many.
  */
 export async function packStatus(listingId: string, opts: { demo?: boolean } = {}): Promise<PackStatus> {
-  const r = await call(`/api/packs/${encodeURIComponent(listingId)}/status?register=${encodeURIComponent(contractAddress())}`);
-  if (r.status === 200 && r.ok && r.uploaded === true) return { uploaded: true, checked: true };
-  // A 400, 500 or 503 (or no answer at all) is not "nothing uploaded"; say the site could not check.
+  const register = contractAddress();
+  const key = `${register.toLowerCase()}/${listingId}`;
+  const held = statusMemo.get(key);
+  // /shop, a pack page and /orders can each ask about the same pack within a second of each
+  // other. One answer serves them all for a few seconds: the delivery store is a paid lookup
+  // per request, and the route's own budget is per caller (lib/budget.ts).
+  if (held && Date.now() - held.at < STATUS_MEMO_MS) return held.value;
+  const r = await call(`/api/packs/${encodeURIComponent(listingId)}/status?register=${encodeURIComponent(register)}`);
+  if (r.status === 200 && r.ok && r.uploaded === true) return keepStatus(key, { uploaded: true, checked: true });
+  // A 400, 429, 500 or 503 (or no answer at all) is not "nothing uploaded"; say the site could not check.
   const checked = r.status === 200;
-  if (opts.demo !== undefined) return { uploaded: opts.demo, checked: checked || opts.demo };
+  if (opts.demo !== undefined) return keepStatus(key, { uploaded: opts.demo, checked: checked || opts.demo });
   try {
     const listing = (await readListing(listingId)).data;
-    if (!listing) return { uploaded: false, checked };
+    if (!listing) return keepStatus(key, { uploaded: false, checked });
     const { isDemoHashes } = await import("./demo-keys");
     const demo = await isDemoHashes(listing.hashes);
-    return { uploaded: demo, checked: checked || demo };
+    return keepStatus(key, { uploaded: demo, checked: checked || demo });
   } catch {
     return { uploaded: false, checked: false };
   }
@@ -113,11 +135,12 @@ export async function fetchPack(
   orderId: string,
   address: string,
   signature: string,
+  issued: string,
 ): Promise<{ ok: boolean; status: number; sections?: string[]; reason?: string }> {
   const r = await call(`/api/packs/${encodeURIComponent(listingId)}/pack`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ order: orderId, address, signature, register: contractAddress() }),
+    body: JSON.stringify({ order: orderId, address, signature, issued, register: contractAddress() }),
   });
   return { ok: r.ok, status: r.status, sections: r.sections, reason: r.reason };
 }
@@ -157,16 +180,43 @@ const heading = (action: string, why: string, scope: SignScope) =>
 export const uploadMessageFor = (scope: SignScope, listingId: string, manifest: string) =>
   `${heading("upload-pack", UPLOAD_WHY, scope)}\nlisting: ${listingId}\nmanifest: ${manifest}`;
 
-/** The read message for an explicit scope. The order fixes the listing on its register; the route checks it. */
-export const readMessageFor = (scope: SignScope, orderId: string) =>
-  `${heading("read-pack", READ_WHY, scope)}\norder: ${orderId}`;
+/**
+ * How long a read signature is worth anything, and how far ahead of this server a signer's clock
+ * may be. Without a window the signature is a bearer token with no end: the route accepts any
+ * request whose signature recovers to the order's buyer, from any client, for ever, and the
+ * browser keeps one in localStorage. A week is long enough that an ordinary buyer signs once and
+ * comes back to their pack; five minutes of skew is the usual allowance for an unsynchronised clock.
+ */
+export const READ_SIG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const READ_SIG_SKEW_MS = 5 * 60 * 1000;
+
+/** An ISO-8601 instant to the minute: what a read message names as the moment it was issued. */
+export const issuedNow = (now: number = Date.now()) => new Date(now).toISOString().slice(0, 16) + "Z";
+
+/** True when `issued` is a readable instant inside the window above. */
+export function issuedIsFresh(issued: unknown, now: number = Date.now()): boolean {
+  if (typeof issued !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/.test(issued)) return false;
+  const at = Date.parse(issued);
+  if (Number.isNaN(at)) return false;
+  return now - at >= -READ_SIG_SKEW_MS && now - at <= READ_SIG_MAX_AGE_MS;
+}
+
+/**
+ * The read message for an explicit scope.
+ *
+ * `listing` is named as well as `order`, so the signature says which pack it is for rather than
+ * leaving that to the order row the route reads afterwards; `issued` is what bounds it in time.
+ */
+export const readMessageFor = (scope: SignScope, orderId: string, listingId: string, issued: string) =>
+  `${heading("read-pack", READ_WHY, scope)}\nlisting: ${listingId}\norder: ${orderId}\nissued: ${issued}`;
 
 /** The upload message this browser signs: this host, the register in use. */
 export const uploadMessage = (listingId: string, manifest: string) =>
   uploadMessageFor(browserScope(), listingId, manifest);
 
-/** The read message this browser signs: this host, the register in use. */
-export const readMessage = (orderId: string) => readMessageFor(browserScope(), orderId);
+/** The read message this browser signs: this host, the register in use, and the minute it signed. */
+export const readMessage = (orderId: string, listingId: string, issued: string) =>
+  readMessageFor(browserScope(), orderId, listingId, issued);
 
 /** sha256 hex of a utf-8 string, in the browser (WebCrypto). */
 export async function sha256Hex(text: string): Promise<string> {

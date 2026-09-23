@@ -26,10 +26,11 @@ from dataclasses import dataclass
 from genlayer import *
 
 
-# Errors are classified so validators know how to compare failures.
-ERROR_EXPECTED = "[EXPECTED]"    # a rule of this contract — deterministic, must match
-ERROR_TRANSIENT = "[TRANSIENT]"  # network — agree only if both saw it
-ERROR_LLM = "[LLM_ERROR]"        # the judge misbehaved — never agree
+# Errors carry a class prefix so a reader of a failed transaction knows whose fault it was.
+# Only two can happen, and they happen in different places: every rule of this contract is
+# refused before the round starts, and the only error raised inside a round is the judge's.
+ERROR_EXPECTED = "[EXPECTED]"    # a rule of this contract, refused before any model is asked
+ERROR_LLM = "[LLM_ERROR]"        # the judge misbehaved inside a round: never agreed, so the round is retried
 
 MAX_TITLE = 60
 MIN_TITLE = 3
@@ -38,8 +39,9 @@ MAX_PROMISES = 6
 MIN_PROMISES = 1
 MAX_PROMISE_CHARS = 160
 MIN_PROMISE_CHARS = 8
-MAX_SECTIONS = 20
+MAX_SECTIONS = 20               # never above 32: revealed_mask is a u32 and carries one bit per section
 MIN_SECTIONS = 1
+MAX_MISSING_REPORTS = 3         # per order; a pack that did not arrive ends in a refund, not in a walk
 HASH_CHARS = "0123456789abcdef"
 MAX_SECTION_CHARS = 4000        # measured: a write carries 16,000 chars; this keeps the prompt far under the ~12k ceiling
 MIN_PRICE = 10 ** 17            # 0.1 GEN, in atto
@@ -196,11 +198,22 @@ def _iso_from_seconds(total: int) -> str:
 
 # ------------------------------------------------------------------ prompt
 
-# Every character that reads as an angle bracket: the ASCII pair, the full-width and small
-# forms that NFKC folds into it, and the common look-alikes. One character in, one out.
-FENCE_OPENERS = "<\uff1c\ufe64\u2039\u00ab\u2329\u3008\u27e8\u226a\u300a"
-FENCE_CLOSERS = ">\uff1e\ufe65\u203a\u00bb\u232a\u3009\u27e9\u226b\u300b"
-FENCE_TABLE = str.maketrans(FENCE_OPENERS + FENCE_CLOSERS, "(" * len(FENCE_OPENERS) + ")" * len(FENCE_CLOSERS))
+# Every character that reads as an angle bracket: the ASCII pair, the full-width and small forms
+# that NFKC folds into it, and every look-alike Unicode names an ANGLE BRACKET, an ANGLE QUOTATION
+# or a modifier letter ARROWHEAD. The ornaments matter as much as the plain forms: the seller
+# writes both the promise and the section, so the tag on a delimiter line is never a secret from
+# them, and the only thing that keeps a planted line out of the prompt is that no character which
+# renders as an angle bracket survives this table. One character in, one out.
+FENCE_OPENERS = ("<\uff1c\ufe64\u2039\u00ab\u2329\u3008\u27e8\u226a\u300a"
+                 "\u276c\u276e\u2770\u27ea\u2991\u29fc\ufe3d\ufe3f\u02c2\u02f1")
+FENCE_CLOSERS = (">\uff1e\ufe65\u203a\u00bb\u232a\u3009\u27e9\u226b\u300b"
+                 "\u276d\u276f\u2771\u27eb\u2992\u29fd\ufe3e\ufe40\u02c3\u02f2")
+# Angle-shaped but pointing neither left nor right: still a delimiter shape in a line of three.
+FENCE_NEUTRAL = "\u02c4\u02c5\u02ef\u02f0"
+FENCE_TABLE = str.maketrans(
+    FENCE_OPENERS + FENCE_CLOSERS + FENCE_NEUTRAL,
+    "(" * len(FENCE_OPENERS) + ")" * len(FENCE_CLOSERS) + "|" * len(FENCE_NEUTRAL),
+)
 
 
 def _fence(raw: typing.Any) -> str:
@@ -276,22 +289,6 @@ def _combine(breaks_answer: str, keeps_answer: str) -> str:
     return "unclear"
 
 
-def _handle_leader_error(leaders_res: typing.Any, leader_fn: typing.Callable) -> bool:
-    leader_msg = str(getattr(leaders_res, "message", ""))
-    try:
-        leader_fn()
-        return False
-    except gl.vm.UserError as err:
-        mine = str(getattr(err, "message", err))
-        if mine.startswith(ERROR_EXPECTED):
-            return mine == leader_msg
-        if mine.startswith(ERROR_TRANSIENT) and leader_msg.startswith(ERROR_TRANSIENT):
-            return True
-        return False
-    except Exception:
-        return False
-
-
 def _bond_for_price(price: int) -> int:
     bond = price * BOND_PERCENT // 100
     return bond if bond > MIN_BOND else MIN_BOND
@@ -324,7 +321,10 @@ def _verdict_line(status: str, verdict: str, section_no: int, promise_no: int, m
         return ("A majority of the validators found that section " + s + " keeps promise " + p
                 + ", so the seller got the price and the bond: " + _gen_text(to_seller) + ".")
     if status == STATUS_SETTLED and verdict == "unclear":
-        return ("A majority of the validators could not tell whether section " + s + " breaks promise " + p
+        # "unclear" is five of the nine cells of _combine: an unclear on either side, and the two
+        # pairs where the framings contradict each other. The sentence has to be true of all five,
+        # so it says no clear answer was reached, never that the validators could not tell.
+        return ("The validators did not reach a clear answer on whether section " + s + " breaks promise " + p
                 + ", so the seller got the price (" + _gen_text(to_seller) + ") and the buyer got the bond back ("
                 + _gen_text(to_buyer) + ").")
     if status == STATUS_SETTLED_STALE:
@@ -383,6 +383,7 @@ class Order:
     judgments: u32
     revealed_text: str      # the last section put on chain by a reveal, then the text judge() judged; "" before either
     revealed_mask: u32      # bit i set: the seller revealed section i (MAX_SECTIONS fits); such a section is never reported again
+    missing_reports: u32    # how many sections this buyer has reported missing; MAX_MISSING_REPORTS caps it
     missing_index: u32
     missing_at: str
     paid_buyer: u256
@@ -501,7 +502,8 @@ class AsDescribed(gl.Contract):
             listing=listing_id, buyer=sender, seller=listing.seller, price=value,
             opened_at=now, deadline_at=_iso_from_seconds(deadline), deadline_seconds=u64(deadline),
             status=STATUS_PAID, section_index=u32(0), promise_index=u32(0), bond=u256(0), disputed_at="",
-            verdict="", judged_at="", judgments=u32(0), revealed_text="", revealed_mask=u32(0), missing_index=u32(0),
+            verdict="", judged_at="", judgments=u32(0), revealed_text="", revealed_mask=u32(0),
+            missing_reports=u32(0), missing_index=u32(0),
             missing_at="", paid_buyer=u256(0), paid_seller=u256(0), settled_by=Address(ZERO), verdict_line="",
         )
         self.order_id_list.append(order_id)
@@ -558,6 +560,40 @@ class AsDescribed(gl.Contract):
         order.disputed_at = now
         return json.dumps({"ok": True, "order": order_id, "status": STATUS_DISPUTED, "section_index": section,
                            "promise_index": promise, "bond": str(int(value))})
+
+    @gl.public.write
+    def withdraw_dispute(self, order_id: str) -> str:
+        """The buyer takes a dispute back. The bond returns; the price stays in escrow.
+
+        Without this, `disputed` is a one-way door out of the buyer's hands:
+        `judge` refuses any text that does not hash to the seller's
+        commitment, so a buyer who disputed a section the seller never
+        delivered as committed can neither judge it nor report it missing,
+        and `settle_stale` hands the price to that seller after STALE_HOURS.
+        Withdrawing puts the order back to `paid`, where `report_missing` →
+        `refund_missing` is the remedy for a section that did not arrive.
+
+        It grants no new power: the deadline is untouched, so the buyer only
+        gets back to a state they were already in and could have acted from,
+        and it conserves value: the bond goes back to the buyer who posted
+        it and nothing else moves.
+        """
+        order_id = order_id.strip()
+        order = self._order(order_id)
+        if gl.message.sender_address != order.buyer:
+            _fail("only the buyer of this order may withdraw its dispute")
+        # A verdict and a final status are written in the same call, so `disputed` already means
+        # no verdict; there is no second check here that could ever fire.
+        if order.status != STATUS_DISPUTED:
+            _fail("only a disputed order can be withdrawn; this one is " + str(order.status))
+        bond = int(order.bond)
+        if bond > 0:
+            _Payee(order.buyer).emit_transfer(value=u256(bond))
+        order.bond = u256(0)
+        order.disputed_at = ""
+        order.status = STATUS_PAID
+        return json.dumps({"ok": True, "order": order_id, "status": STATUS_PAID, "to_buyer": str(bond),
+                           "deadline_at": str(order.deadline_at)})
 
     @gl.public.write
     def judge(self, order_id: str, section_text: str) -> str:
@@ -681,6 +717,11 @@ class AsDescribed(gl.Contract):
         Once per section: a section the seller already revealed is on chain
         for good, so it can never be reported again. Each reveal moves the
         deadline out at most once per section, and the money still moves.
+
+        MAX_MISSING_REPORTS per order on top of that. A buyer whose pack never
+        arrived reports one section, the seller cannot reveal it, and
+        refund_missing returns the whole price, so nothing honest needs more;
+        the cap is what stops a buyer walking a seller through the whole pack.
         """
         order_id = order_id.strip()
         order = self._order(order_id)
@@ -700,10 +741,15 @@ class AsDescribed(gl.Contract):
             _fail("the section index is a number from 0 to " + str(count - 1))
         if int(order.revealed_mask) & (1 << section):
             _fail("section " + str(section + 1) + " is already on chain; read it from the order")
+        if int(order.missing_reports) >= MAX_MISSING_REPORTS:
+            _fail("a buyer reports at most " + str(MAX_MISSING_REPORTS) + " sections missing per order; "
+                  "a pack that did not arrive ends in a refund")
         order.status = STATUS_MISSING
+        order.missing_reports = u32(int(order.missing_reports) + 1)
         order.missing_index = u32(section)
         order.missing_at = now
         return json.dumps({"ok": True, "order": order_id, "status": STATUS_MISSING, "missing_index": section,
+                           "missing_reports": int(order.missing_reports), "reports_left": MAX_MISSING_REPORTS - int(order.missing_reports),
                            "reveal_hours": REVEAL_HOURS})
 
     @gl.public.write
@@ -884,6 +930,7 @@ class AsDescribed(gl.Contract):
             "promise_lines": "one line each, no line breaks",
             "sections": [MIN_SECTIONS, MAX_SECTIONS],
             "section_chars": MAX_SECTION_CHARS,
+            "missing_reports": MAX_MISSING_REPORTS,
             "hash": "sha256 of the utf-8 section text, 64 lowercase hex characters, exact bytes, no trimming",
             "price_atto": [str(MIN_PRICE), str(MAX_PRICE)],
             "window_seconds": [MIN_WINDOW, MAX_WINDOW],
@@ -904,9 +951,10 @@ class AsDescribed(gl.Contract):
                 "list_pack": "anyone, becomes the seller", "close_listing": "the seller",
                 "buy": "anyone but the seller, with exactly the price; becomes the buyer",
                 "open_dispute": "the buyer, before the deadline, with exactly the bond",
+                "withdraw_dispute": "the buyer, while the dispute has no verdict; the bond comes back and the order returns to paid with its deadline unchanged",
                 "judge": "anyone; the text must hash to the seller's commitment, so the caller cannot steer the verdict",
                 "release": "anyone, once the window has passed with no dispute",
-                "report_missing": "the buyer, before the deadline, once per section: a section the seller already revealed is refused",
+                "report_missing": "the buyer, before the deadline, once per section and at most " + str(MAX_MISSING_REPORTS) + " sections per order: a section the seller already revealed is refused",
                 "reveal": "the seller, within " + str(REVEAL_HOURS) + " hours of the report",
                 "refund_missing": "anyone, " + str(REVEAL_HOURS) + " hours after the report with no reveal",
                 "settle_stale": "anyone, " + str(STALE_HOURS) + " hours after a dispute with no verdict",
@@ -991,15 +1039,21 @@ class AsDescribed(gl.Contract):
             "bond": str(int(o.bond)), "disputed_at": str(o.disputed_at), "verdict": str(o.verdict),
             "judged_at": str(o.judged_at), "judgments": int(o.judgments), "revealed_text": str(o.revealed_text),
             "revealed": self._revealed(order_id, int(o.revealed_mask)),
+            "missing_reports": int(o.missing_reports), "missing_reports_left": MAX_MISSING_REPORTS - int(o.missing_reports),
             "missing_index": int(o.missing_index), "missing_at": str(o.missing_at),
             "paid_buyer": str(int(o.paid_buyer)), "paid_seller": str(int(o.paid_seller)), "settled_by": _hex(o.settled_by),
             "verdict_line": str(o.verdict_line),
         }
 
     def _revealed(self, order_id: str, mask: int) -> typing.List[typing.Dict[str, typing.Any]]:
-        """Every section the seller put on chain for this order, by ascending index, read from the mask."""
+        """Every section the seller put on chain for this order, by ascending index, read from the mask.
+
+        The bound is stated here because this is where it is used: revealed_mask is a u32, so a
+        section index above 31 would have no bit of its own and report_missing would stop refusing
+        an already-revealed section.
+        """
         rows = []
-        for i in range(MAX_SECTIONS):
+        for i in range(min(MAX_SECTIONS, 32)):
             if mask & (1 << i):
                 key = order_id + ":" + str(i)
                 rows.append({"index": i, "text": str(self.reveals[key]) if key in self.reveals else ""})
@@ -1032,7 +1086,11 @@ class AsDescribed(gl.Contract):
 
         def validator_fn(leaders_res: gl.vm.Result) -> bool:
             if not isinstance(leaders_res, gl.vm.Return):
-                return _handle_leader_error(leaders_res, leader_fn)
+                # The leader's round raised. Every rule of this contract is checked before the
+                # round starts, so the only error that can come out of one is [LLM_ERROR]: the
+                # judge misbehaved. That is never agreed, so nothing settles and the round is
+                # retried with another leader. A failure is not a verdict.
+                return False
             theirs = leaders_res.calldata
             if not isinstance(theirs, dict):
                 return False

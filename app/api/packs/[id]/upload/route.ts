@@ -30,6 +30,8 @@ const reply = (status: number, body: Record<string, unknown>) =>
   Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+/** Characters as the contract counts them (code points), not UTF-16 code units. */
+const chars = (s: string) => Array.from(s).length;
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -48,12 +50,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!Array.isArray(sections) || sections.length < 1 || sections.length > MAX_SECTIONS) {
     return reply(400, { ok: false, reason: `sections must be a list of 1 to ${MAX_SECTIONS} strings` });
   }
-  if (!sections.every((s) => typeof s === "string" && s.length >= 1 && s.length <= MAX_SECTION_CHARS)) {
+  // Code points, as the contract counts them: String.length counts UTF-16 code units, so a
+  // section of 2,500 emoji is 2,500 characters to the contract and 5,000 here. A listing the
+  // contract accepts (list_pack takes hashes only) could then never be delivered.
+  if (!sections.every((s) => typeof s === "string" && s.length >= 1 && chars(s) <= MAX_SECTION_CHARS)) {
     return reply(400, { ok: false, reason: `every section must be text of 1 to ${MAX_SECTION_CHARS} characters` });
   }
   const texts = sections as string[];
 
-  const checked = await checkRegister(body.register);
+  // Vetting an unknown register is itself a chain read, and it happens before any signature, so
+  // it is budgeted against the caller inside checkRegister (lib/register-param.ts).
+  const caller = callerOf(req);
+  const checked = await checkRegister(body.register, caller);
   if (!checked.ok) return reply(checked.status, { ok: false, reason: checked.reason });
   const register = checked.register;
 
@@ -80,7 +88,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   // A signature costs the signer nothing, so the chain read below is also budgeted per caller.
-  if (!takeChainRead(callerOf(req))) return reply(429, { ok: false, reason: TOO_MANY_READS });
+  // Where no header identifies the caller, the verified signer is the key, not one shared bucket.
+  if (!takeChainRead(caller === "all" ? address : caller)) return reply(429, { ok: false, reason: TOO_MANY_READS });
 
   // The chain is the authority on who the seller is and what was committed.
   let listing;

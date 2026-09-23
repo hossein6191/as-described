@@ -1,4 +1,4 @@
-# As Described — brand
+# As Described: brand
 
 One mark, one wordmark, one accent. The mark is a tilted price tag (rounded pentagon with an
 eyelet hole) with a bold check knocked out of its body: every promise on the tag is checked.

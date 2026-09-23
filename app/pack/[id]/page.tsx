@@ -48,7 +48,10 @@ async function readPackPage(id: string) {
     readBondFor(id).catch(() => bondFallback(l.data!.priceAtto)),
     isMock
       ? Promise.resolve(mockPackUploaded(id))
-      : isDemoHashes(l.data.hashes).then((demo) => demo || packStatus(id, { demo: false }).then((s) => s.uploaded).catch(() => false)),
+      : isDemoHashes(l.data.hashes).then((demo) =>
+          // null when the store never answered: a failed read is never shown as "not delivered".
+          demo ? true : packStatus(id, { demo: false }).then((s) => (s.checked ? s.uploaded : null)).catch(() => null),
+        ),
   ]);
   return { data: { listing: l.data, bondAtto: bond && bond !== "0" ? bond : bondFallback(l.data.priceAtto), uploaded }, source: l.source } as const;
 }
@@ -167,7 +170,7 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                   <div className="absolute top-3 left-3 flex flex-wrap gap-2">
                     {l.seller.toLowerCase() === DEMO_SELLER.toLowerCase() ? <Badge>Demo</Badge> : null}
                     {!l.open ? <Badge variant="secondary">Closed</Badge> : null}
-                    {!d!.uploaded ? <Badge className="bg-gold text-black">Not delivered yet</Badge> : null}
+                    {d!.uploaded === false ? <Badge className="bg-gold text-black">Not delivered yet</Badge> : null}
                   </div>
                   <span className="absolute right-3 bottom-3 rounded-full bg-black/40 px-2 py-0.5 text-[11px] font-medium text-white/90 capitalize backdrop-blur-sm">
                     {l.kind}
@@ -194,7 +197,9 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                 <section className="space-y-3">
                   <h2 className="text-lg font-semibold">Promises</h2>
                   <p className="text-sm text-muted-foreground">
-                    Each one is enforced against every section. Dispute a section against a promise and five validators decide.
+                    Each one is enforced against every section. Dispute a section against a promise: Studio assigns five
+                    validators, each one that answers in time runs both questions on its own model, and the majority&apos;s one
+                    word is the verdict.
                   </p>
                   <PromisePills promises={l.promises} />
                 </section>
@@ -257,7 +262,7 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                     ) : undefined
                   }
                 >
-                  {!d!.uploaded && l.open ? (
+                  {d!.uploaded === false && l.open ? (
                     <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
                       The seller has not uploaded the pack contents yet. You can still buy. If a section never arrives, report it: the seller then has 24 hours to put its exact text on chain; if they do not, you get the full price back.
                     </p>

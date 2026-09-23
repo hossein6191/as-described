@@ -180,13 +180,21 @@ async function usageOf(register: string, id: string): Promise<{ packs: number; b
 async function guestRegisters(): Promise<string[]> {
   const site = siteRegister().toLowerCase();
   const keep = (key: string) => !!key && key !== "mock" && key !== site;
+  // Shape as well as name: the store folder also holds the .probe file storageBackend() writes,
+  // the macOS "._" sidecar this drive writes beside it and any .DS_Store the finder leaves. None
+  // of those is a register, and counting them spent the guest ceiling before a guest arrived.
   if (blobOn()) {
     const { list } = await import("@vercel/blob");
     const page = await list({ prefix: "packs/", mode: "folded", limit: 1000 });
-    return page.folders.map((f) => f.replace(/^packs\//, "").replace(/\/$/, "").toLowerCase()).filter(keep);
+    return page.folders
+      .map((f) => f.replace(/^packs\//, "").replace(/\/$/, "").toLowerCase())
+      .filter((n) => isRegister(n) && keep(n));
   }
   try {
-    return (await readdir(LOCAL_DIR)).map((n) => n.toLowerCase()).filter(keep);
+    return (await readdir(LOCAL_DIR, { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name.toLowerCase())
+      .filter((n) => isRegister(n) && keep(n));
   } catch {
     return [];
   }
