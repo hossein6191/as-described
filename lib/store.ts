@@ -1,4 +1,4 @@
-// Where uploaded packs live: Vercel Blob when BLOB_READ_WRITE_TOKEN is set (pathname
+// Where uploaded packs live: Vercel Blob when the project has a bucket (pathname
 // packs/<register>/<listing>.json, no random suffix, overwrite allowed), else a local file store
 // under .data/packs/<register>/<listing>.json. The local store is for development: a deployed
 // site's disk is read-only, so without the token storageBackend() says "none" and the upload
@@ -30,7 +30,13 @@ export type StoredPack = {
 
 const LOCAL_DIR = path.join(process.cwd(), ".data", "packs");
 
-export const blobOn = (): boolean => !!process.env.BLOB_READ_WRITE_TOKEN;
+/**
+ * A bucket this site can write to. Two shapes answer yes: a read-write token, and a newer Vercel
+ * Blob store, which hands the project BLOB_STORE_ID and lets the deployment authenticate with its
+ * own OIDC token. The SDK picks the credential itself, so nothing else in this module changes.
+ */
+export const blobOn = (): boolean =>
+  !!process.env.BLOB_READ_WRITE_TOKEN || (!!process.env.BLOB_STORE_ID && !!process.env.VERCEL_OIDC_TOKEN);
 
 /**
  * "blob" on Vercel Blob, "local" when the .data/ folder is writable, "none" otherwise (a read-only
