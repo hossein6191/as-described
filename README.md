@@ -11,13 +11,12 @@ verdict. Nobody can refuse a refund, and nobody can fake the evidence: the revea
 hash to what the seller committed before the sale.
 
 - Live site: <https://as-described.vercel.app>
-- Register: `0x2f75c3C4854AebF095711510B7075e8f0805966F` on GenLayer Studio, chain 61999, the
-  18 September release. It is being replaced by a register deployed from the current
-  `contracts/as_described.py` (sha256 `eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803`,
-  the same bytes the site serves at `/contracts/as_described.py`); this line, the Explorer link
-  and `lib/config.ts` change with it, and every page degrades to what the older register can
-  answer until then.
-- Explorer: <https://explorer-studio.genlayer.com/address/0x2f75c3C4854AebF095711510B7075e8f0805966F>
+- Register: `0x197478dA434994220368cE3e32179B9409f1509D` on GenLayer Studio, chain 61999, deployed from
+  the author's own wallet on 23 September 2026. The source read back from the chain with
+  `gen_getContractCode` is byte-identical to `contracts/as_described.py` (sha256
+  `eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803`), which is also the file the
+  site serves at `/contracts/as_described.py` for anyone who wants their own register.
+- Explorer: <https://explorer-studio.genlayer.com/address/0x197478dA434994220368cE3e32179B9409f1509D>
 
 Built on GenLayer Studio (chain 61999). Test GEN only, no real money.
 
