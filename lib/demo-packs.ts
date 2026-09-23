@@ -3,14 +3,19 @@
 //
 // Pack 1: recipe 5 breaks promise 1 (it has bacon). Pack 2 is the honest twin (smoked tofu).
 // Pack 3: six cold-email templates, all promises kept; its 5-minute window shows `release`.
-// Pack 4: revision cards; card 4 has no date. Pack 5: fiction prompts; prompt 6 is two paragraphs.
-// Pack 6: a Lisbon walking day; stop 4 has no opening time. Pack 7: support replies, all promises kept.
+// Pack 4: revision cards; card 4 names no year or date. Pack 5: fiction prompts; prompt 6 is two paragraphs.
+// Pack 6: a Lisbon walking day; stop 4 gives no opening hours. Pack 7: support replies, all promises kept.
 // Pack 8: naming rules; rule 5 has no bad example.
 // Packs 9 to 19 give every kind at least three packs: 9 breakfasts (recipe 4 needs a stove), 10 proposals
-// (template 3 has no date), 11 invitations (honest), 12 physics cards (card 5 has no worked example),
-// 13 Spanish verbs (honest), 14 journal prompts (prompt 5 is not a question), 15 interview prompts (honest),
-// 16 houseplants (plant 4 never says how often to water), 17 Kyoto (honest), 18 a card game (honest),
-// 19 commit messages (rule 6 has no example).
+// (template 3 has no delivery date line), 11 invitations (honest), 12 physics cards (card 5 has no worked
+// example), 13 Spanish verbs (honest), 14 journal prompts (prompt 5 is not a question), 15 interview prompts
+// (honest), 16 houseplants (plant 4 never says how often to water), 17 Kyoto (honest), 18 a card game
+// (honest), 19 commit messages (rule 6 has no example).
+//
+// Every promise is written to be read literally: in each pack the named section breaks the named
+// promise and nothing else breaks anything, and word limits sit well above the longest section.
+// Only promises, notes and hints may change here. A section's bytes are its hash, and the hashes are
+// how the site recognises a demo pack (lib/demo-keys.ts), so an edited section is no longer a demo.
 
 export type DemoPack = {
   title: string;
@@ -210,11 +215,11 @@ Either way, good luck with the launch.
 Best,
 Hannah Lindqvist`;
 
-// ---- Pack 4: exam notes, six cards on the French Revolution. Card 4 has no date. ----
+// ---- Pack 4: exam notes, six cards on the French Revolution. Card 4 names no year or date. ----
 
 const NOTES_PROMISES = [
-  "Every card states at least one date.",
-  "Every card is under 150 words.",
+  "Every card names at least one year or date.",
+  "Every card is under 200 words.",
   "No card uses the word 'probably'.",
 ];
 
@@ -240,8 +245,8 @@ The Directory, the five-man executive that ruled from 1795, was unpopular and de
 
 const PROMPT_PROMISES = [
   "Every prompt names a setting and a character.",
-  "Every prompt is a single paragraph.",
-  "No prompt is longer than 120 words.",
+  "Below its title line, every prompt is a single paragraph.",
+  "No prompt is longer than 150 words.",
 ];
 
 const prompt1 = `Prompt 1: The last ferry
@@ -270,11 +275,11 @@ Setting: a hospital corridor with a coffee machine that only takes exact change,
 const prompt8 = `Prompt 8: The listing
 Setting: a flat viewing in a city where every flat is taken within the hour, on a Saturday morning in a heatwave. Character: Sunny, the letting agent, twenty-three, showing the same one-bedroom to eleven people in forty minutes. Write it as a single continuous take: the same rooms, the same patter, eleven different faces, each reacting to the same damp patch behind the door. Somewhere around the seventh viewer Sunny should stop performing. Decide who gets the flat and make it the wrong person, in a way that Sunny can see and cannot fix.`;
 
-// ---- Pack 6: a first day in Lisbon, six stops. Stop 4 gives no opening time. ----
+// ---- Pack 6: a first day in Lisbon, six stops. Stop 4 gives no opening hours. ----
 
 const LISBON_PROMISES = [
-  "Every stop lists an opening time.",
-  "Every stop says how to get there from the previous one, on foot or by tram 28, and how long it takes.",
+  "Every stop gives its opening hours in clock times.",
+  "Every stop after the first says how to get there from the previous one, on foot or by tram 28, and how long it takes.",
   "No stop is a shopping mall.",
 ];
 
@@ -304,8 +309,8 @@ This is a long walk but a flat and easy one, on a path made for it, with the wat
 // ---- Pack 7: six customer support replies, all promises kept. ----
 
 const SUPPORT_PROMISES = [
-  "Every template starts with a greeting.",
-  "Every template ends with a next step for the customer.",
+  "Every template's message opens with a greeting.",
+  "Every template has a 'Next step:' line before its sign-off.",
   "No template promises a refund.",
 ];
 
@@ -381,10 +386,10 @@ Next step: reply to this email with those three details, and I will pick it up t
 Kind regards,
 Sam, Support`;
 
-// ---- Pack 8: eight rules for naming things in code. Rule 5 has no bad example. ----
+// ---- Pack 8: eight rules for naming things in code. Rule 5 has no labelled bad example. ----
 
 const NAMING_PROMISES = [
-  "Every rule has a bad example and a good example.",
+  "Every rule gives a labelled bad example and a labelled good example.",
   "Every rule fits in 200 words.",
 ];
 
@@ -507,7 +512,7 @@ The good names were not found by thinking harder about words. They were found by
 
 const BREAKFAST_PROMISES = [
   "Every recipe states a total time, and it is 10 minutes or less.",
-  "No recipe needs a stove, a toaster or any other source of heat.",
+  "No recipe's steps use a stove, a toaster or any other source of heat.",
   "Every recipe serves one person.",
 ];
 
@@ -583,11 +588,11 @@ Ingredients: 150 g cottage cheese, a 5 cm piece of cucumber, 4 cherry tomatoes, 
 
 Savoury, salty and filling, and it needs no more skill than opening a tub. Keep the seasoning jar at your desk and this becomes a lunch too.`;
 
-// ---- Pack 10: five freelance proposals. Template 3 names no delivery date. ----
+// ---- Pack 10: five freelance proposals. Template 3 has no delivery date line. ----
 
 const PROPOSAL_PROMISES = [
   "Every template names a price.",
-  "Every template names a delivery date.",
+  "Every template has a 'Delivery date:' line naming a calendar date.",
   "No template leaves a placeholder like [NAME] unfilled.",
 ];
 
@@ -672,7 +677,7 @@ Nadia Ferreira`;
 const INVITE_PROMISES = [
   "Every invitation states a day, a start time and a length.",
   "Every invitation says what to prepare, or says that nothing needs preparing.",
-  "Every invitation is under 150 words.",
+  "Every invitation is under 200 words.",
 ];
 
 const invite1 = `Template 1: Project kickoff
@@ -785,7 +790,7 @@ Rosa`;
 const PHYSICS_PROMISES = [
   "Every card ends with one worked example, labelled 'Worked example'.",
   "Every card states at least one formula.",
-  "Every card is under 200 words.",
+  "Every card is under 250 words.",
 ];
 
 const physics1 = `Card 1: Newton's first law, inertia
@@ -834,8 +839,8 @@ Worked example: a 0.16 kg cricket ball arrives at 30 m/s and is caught, coming t
 
 const SPANISH_PROMISES = [
   "Every card conjugates the present tense for all six persons: yo, tú, él/ella, nosotros, vosotros, ellos.",
-  "Every card gives one example sentence with its English translation.",
-  "Every card is under 150 words.",
+  "Every card ends with an example sentence and its English translation.",
+  "Every card is under 200 words.",
 ];
 
 const spanish1 = `Card 1: ser (to be, for what something is)
@@ -945,9 +950,9 @@ Example: Siempre dices que vienes y luego dicen tus amigos que no te han visto. 
 // ---- Pack 14: eight journal prompts for a hard week. Prompt 5 is an instruction, not a question. ----
 
 const JOURNAL_PROMISES = [
-  "Every prompt is a question and ends with a question mark.",
-  "Every prompt is a single paragraph.",
-  "No prompt is longer than 120 words.",
+  "Every prompt asks at least one question and ends with a question mark.",
+  "Below its title line, every prompt is a single paragraph.",
+  "No prompt is longer than 150 words.",
 ];
 
 const journal1 = `Prompt 1: The smallest good thing
@@ -979,7 +984,7 @@ When you wake up on the first morning of next week, what is the very first hour 
 const INTERVIEW_PROMISES = [
   "Every question is open-ended: it cannot be answered with a yes or a no.",
   "Every prompt says what a strong answer includes.",
-  "No prompt is longer than 150 words.",
+  "No prompt is longer than 200 words.",
 ];
 
 const interview1 = `Prompt 1: The project that changed your mind
@@ -1017,12 +1022,12 @@ Question: Describe the working week in which you do your best work: how you spli
 
 A strong answer includes: a concrete picture rather than "I am flexible"; awareness of their own needs for focus time and feedback; an honest account of what has hurt them before (micromanagement, silence, moving targets) without bitterness; and questions back about how the team actually works. This is as much a question for you as for them; if their best week cannot exist here, better to find out now.`;
 
-// ---- Pack 16: six houseplants. Plant 4 never says how often to water. ----
+// ---- Pack 16: six houseplants. Plant 4 has no Water line. ----
 
 const PLANT_PROMISES = [
-  "Every plant states how often to water it.",
+  "Every plant has a 'Water:' line saying how often to water it.",
   "Every plant states the light it needs.",
-  "Every plant names one sign that it is getting too much water.",
+  "Every plant names at least one sign that it is getting too much water.",
 ];
 
 const plant1 = `Plant 1: Pothos (Epipremnum aureum)
@@ -1092,8 +1097,8 @@ Feeding: a half-strength feed two or three times over the summer. Repot only eve
 // ---- Pack 17: a weekend in Kyoto, six stops, all promises kept. ----
 
 const KYOTO_PROMISES = [
-  "Every stop lists an opening time.",
-  "Every stop says how to get there from the previous one and how long it takes.",
+  "Every stop gives its opening hours, as clock times or as open 24 hours.",
+  "Every stop after the first says how to get there from the previous one and how long it takes.",
   "No stop is a shopping mall.",
 ];
 
@@ -1123,7 +1128,7 @@ End the weekend where the city's evening begins. Yasaka Shrine sits at the easte
 // ---- Pack 18: rules for a two-player card game, all promises kept. ----
 
 const GAME_PROMISES = [
-  "Every rule is under 120 words.",
+  "Every rule is under 150 words.",
   "No rule needs anything beyond one standard 52-card deck and two players.",
   "No rule mentions money or betting.",
 ];
@@ -1153,7 +1158,7 @@ After three rounds, add up each player's three round totals. The player with the
 
 const COMMIT_PROMISES = [
   "Every rule has an example, on a line that starts with 'Example:'.",
-  "Every rule is under 150 words.",
+  "Every rule is under 200 words.",
 ];
 
 const commit1 = `Rule 1: Say what changed, in the imperative
@@ -1244,31 +1249,31 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "1",
     windowSeconds: 3 * 86400,
     note: "Recipe 5 has bacon: a dispute on section 5 against promise 1 breaks.",
-    hint: "One recipe quietly breaks promise P1. Read them, find it, and dispute that section against P1 to see a refund; dispute any other section and the validators will side with the seller.",
+    hint: "One recipe breaks promise P1. Read them, find it, and dispute that section against P1: the verdict should be breaks, and your price and bond come back. Every other section keeps every promise, so a dispute there should go to the seller.",
   },
   {
-    title: "Weeknight Vegetarian, 8 recipes — the honest twin",
+    title: "Weeknight Vegetarian, 8 recipes (honest twin)",
     kind: "recipes",
     promises: VEG_PROMISES,
     sections: [recipe1, recipe2, recipe3, recipe4, recipe5Tofu, recipe6, recipe7, recipe8],
     priceGen: "1",
     windowSeconds: 3 * 86400,
-    note: "Same pack with smoked tofu in recipe 5: every dispute keeps.",
-    hint: "The honest twin: every promise holds. Any dispute ends with the seller paid and your bond gone; try it if you want to see the validators refuse a bad claim.",
+    note: "Same pack with smoked tofu in recipe 5: every promise holds, so every dispute should come back keeps.",
+    hint: "The honest twin: every promise holds in every section. A dispute should come back keeps, with the price and your bond going to the seller; try it to watch the validators turn down a claim the text does not support.",
   },
   {
     title: "Cold Email Templates, 6 templates",
     kind: "templates",
     promises: [
       "Every template has a subject line.",
-      "Every template is under 120 words.",
+      "Every template is under 150 words.",
       "No template leaves a placeholder like [NAME] unfilled.",
     ],
     sections: [email1, email2, email3, email4, email5, email6],
     priceGen: "0.5",
     windowSeconds: 300,
     note: "All promises kept; the 5-minute window shows a release to the seller.",
-    hint: "Every promise holds and the window is five minutes; after it closes, press Release. Nothing to dispute here.",
+    hint: "Every promise holds and the window is five minutes; after it closes, anyone can press Release to pay the seller. Nothing here should win a dispute.",
   },
   {
     title: "Exam notes: the French Revolution, 6 cards",
@@ -1277,8 +1282,8 @@ export const DEMO_PACKS: DemoPack[] = [
     sections: [card1, card2, card3, card4, card5, card6],
     priceGen: "0.5",
     windowSeconds: 2 * 86400,
-    note: "Revision cards with dates and word limits; card 4 gives no date, so it breaks promise 1.",
-    hint: "One card breaks promise P1: it never states a date. Read the six cards, find it, and dispute that card against P1. The word limit and the banned word hold everywhere.",
+    note: "Revision cards with dates and word limits; card 4 names no year or date, so it breaks promise 1.",
+    hint: "One card breaks promise P1: it names no year and no date. Read the six cards, find it, and dispute that card against P1. The word limit and the banned word hold on every card.",
   },
   {
     title: "Writing prompts for short fiction, 8 prompts",
@@ -1288,7 +1293,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "1",
     windowSeconds: 3 * 86400,
     note: "Eight story seeds, each with a setting and a character; prompt 6 runs to two paragraphs, breaking promise 2.",
-    hint: "One prompt breaks promise P2: it is not a single paragraph. Every prompt names its setting and character and stays under 120 words, so a dispute on P1 or P3 will lose.",
+    hint: "One prompt breaks promise P2: below its title it runs to two paragraphs. Every prompt names its setting and character and stays under 150 words, so P1 and P3 hold.",
   },
   {
     title: "A first day in Lisbon, 6 stops",
@@ -1297,8 +1302,8 @@ export const DEMO_PACKS: DemoPack[] = [
     sections: [stop1, stop2, stop3, stop4, stop5, stop6],
     priceGen: "1.5",
     windowSeconds: 2 * 86400,
-    note: "A day from Praça do Comércio to Belém Tower; stop 4 has no opening time, breaking promise 1.",
-    hint: "One stop breaks promise P1: it lists no opening time. Every leg between stops is timed, on foot or by tram 28, and none of the stops is a mall, so P2 and P3 hold.",
+    note: "A day from Praça do Comércio to Belém Tower; stop 4 gives no opening hours, breaking promise 1.",
+    hint: "One stop breaks promise P1: it gives no opening hours. Every leg after the first stop is described and timed, on foot or by tram 28, and none of the stops is a mall, so P2 and P3 hold.",
   },
   {
     title: "Customer support replies, 6 templates",
@@ -1307,8 +1312,8 @@ export const DEMO_PACKS: DemoPack[] = [
     sections: [support1, support2, support3, support4, support5, support6],
     priceGen: "0.5",
     windowSeconds: 86400,
-    note: "Six honest support replies: every one opens with a greeting, ends with a next step, and none promises a refund.",
-    hint: "Every promise holds. Each reply starts with a greeting, ends with a next step, and never promises a refund; any dispute ends with the seller paid and your bond gone.",
+    note: "Six honest support replies: every message opens with a greeting, has a Next step line before the sign-off, and promises no refund.",
+    hint: "Every promise holds. Each message opens with a greeting, has a Next step line before its sign-off, and never promises a refund; a dispute should come back keeps, with your bond going to the seller.",
   },
   {
     title: "Eight rules for naming things in code",
@@ -1318,7 +1323,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "2",
     windowSeconds: 3 * 86400,
     note: "A short craft list on naming; rule 5 shows only a good example, so it breaks promise 1.",
-    hint: "One rule breaks promise P1: it is missing one of the two examples. Every rule is under 200 words, so P2 holds throughout.",
+    hint: "One rule breaks promise P1: it has no labelled bad example. Every rule is under 200 words, so P2 holds throughout.",
   },
   {
     title: "Ten-minute breakfasts, 6 recipes",
@@ -1328,7 +1333,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "0.5",
     windowSeconds: 2 * 86400,
     note: "Six no-cook breakfasts under ten minutes; recipe 4 cooks in a pan on the stove, breaking promise 2.",
-    hint: "One recipe breaks promise P2: it needs heat. Every recipe states a time of ten minutes or less and serves one, so P1 and P3 hold.",
+    hint: "One recipe breaks promise P2: one of its steps uses heat. Every recipe states a time of ten minutes or less and serves one, so P1 and P3 hold.",
   },
   {
     title: "Freelance proposal templates, 5 templates",
@@ -1337,8 +1342,8 @@ export const DEMO_PACKS: DemoPack[] = [
     sections: [proposal1, proposal2, proposal3, proposal4, proposal5],
     priceGen: "1",
     windowSeconds: 2 * 86400,
-    note: "Five one-page proposals with a price and a date; template 3 never names a delivery date, breaking promise 2.",
-    hint: "One template breaks promise P2: it names no delivery date. Every template names a price and leaves no placeholder unfilled, so P1 and P3 hold.",
+    note: "Five one-page proposals with a price and a date; template 3 has no delivery date line, breaking promise 2.",
+    hint: "One template breaks promise P2: it has no delivery date line. Every template names a price and leaves no placeholder unfilled, so P1 and P3 hold.",
   },
   {
     title: "Meeting invitations, 6 templates",
@@ -1348,7 +1353,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "0.5",
     windowSeconds: 86400,
     note: "Six short invitations, from a kickoff to a reschedule; every promise holds.",
-    hint: "Every promise holds. Each invitation names a day, a start time and a length, says what to prepare, and stays under 150 words; any dispute loses.",
+    hint: "Every promise holds. Each invitation names a day, a start time and a length, says what to prepare, and stays under 200 words; a dispute should come back keeps.",
   },
   {
     title: "Newton's three laws and friends, 6 cards",
@@ -1358,7 +1363,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "0.5",
     windowSeconds: 2 * 86400,
     note: "Six revision cards with formulas and worked examples; card 5 ends without a worked example, breaking promise 1.",
-    hint: "One card breaks promise P1: it has no worked example. Every card states a formula and stays under 200 words, so P2 and P3 hold.",
+    hint: "One card breaks promise P1: it has no worked example. Every card states a formula and stays under 250 words, so P2 and P3 hold.",
   },
   {
     title: "Spanish irregular verbs, 8 cards",
@@ -1367,8 +1372,8 @@ export const DEMO_PACKS: DemoPack[] = [
     sections: [spanish1, spanish2, spanish3, spanish4, spanish5, spanish6, spanish7, spanish8],
     priceGen: "0.5",
     windowSeconds: 3 * 86400,
-    note: "Eight verbs, each conjugated in full with an example sentence; every promise holds.",
-    hint: "Every promise holds. Each card gives all six present-tense forms, one translated example, and stays under 150 words; any dispute loses.",
+    note: "Eight verbs, each conjugated in full and ending with a translated example sentence; every promise holds.",
+    hint: "Every promise holds. Each card gives all six present-tense forms, ends with an example sentence and its translation, and stays under 200 words; a dispute should come back keeps.",
   },
   {
     title: "Journal prompts for a hard week, 8 prompts",
@@ -1378,7 +1383,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "0.5",
     windowSeconds: 2 * 86400,
     note: "Eight prompts written as questions; prompt 5 is a set of instructions instead, breaking promise 1.",
-    hint: "One prompt breaks promise P1: it is not a question. Every prompt is one paragraph under 120 words, so P2 and P3 hold.",
+    hint: "One prompt breaks promise P1: it asks no question and does not end with a question mark. Every prompt is one paragraph under 150 words, so P2 and P3 hold.",
   },
   {
     title: "Interview questions for hiring a designer, 7 prompts",
@@ -1388,7 +1393,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "1",
     windowSeconds: 2 * 86400,
     note: "Seven open-ended questions, each with what a strong answer includes; every promise holds.",
-    hint: "Every promise holds. No question can be answered yes or no, each says what a strong answer includes, and each is under 150 words; any dispute loses.",
+    hint: "Every promise holds. No question can be answered yes or no, each prompt says what a strong answer includes, and each is under 200 words; a dispute should come back keeps.",
   },
   {
     title: "Caring for houseplants, 6 plants",
@@ -1397,8 +1402,8 @@ export const DEMO_PACKS: DemoPack[] = [
     sections: [plant1, plant2, plant3, plant4, plant5, plant6],
     priceGen: "0.5",
     windowSeconds: 2 * 86400,
-    note: "Six easy plants with light, water and overwatering signs; plant 4 never says how often to water, breaking promise 1.",
-    hint: "One plant breaks promise P1: it never says how often to water. Every plant states its light and one sign of too much water, so P2 and P3 hold.",
+    note: "Six easy plants with light, water and overwatering signs; plant 4 has no Water line, breaking promise 1.",
+    hint: "One plant breaks promise P1: it never says how often to water. Every plant states its light and at least one sign of too much water, so P2 and P3 hold.",
   },
   {
     title: "A weekend in Kyoto, 6 stops",
@@ -1407,8 +1412,8 @@ export const DEMO_PACKS: DemoPack[] = [
     sections: [kyoto1, kyoto2, kyoto3, kyoto4, kyoto5, kyoto6],
     priceGen: "1.5",
     windowSeconds: 3 * 86400,
-    note: "Two days from Fushimi Inari to Gion, with opening times and transport for every stop; every promise holds.",
-    hint: "Every promise holds. Each stop lists an opening time and how to reach it from the last, and none is a mall; any dispute loses.",
+    note: "Two days from Fushimi Inari to Gion, with opening hours for every stop and transport for every leg; every promise holds.",
+    hint: "Every promise holds. Each stop gives its opening hours, each one after the first says how to reach it from the last and how long it takes, and none is a mall; a dispute should come back keeps.",
   },
   {
     title: "Rules for a two-player card game",
@@ -1418,7 +1423,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "0.5",
     windowSeconds: 86400,
     note: "Bridgeway, a seven-rule game for one deck and two players; every promise holds.",
-    hint: "Every promise holds. Each rule is under 120 words, needs only one deck and two players, and never mentions money; any dispute loses.",
+    hint: "Every promise holds. Each rule is under 150 words, needs only one deck and two players, and never mentions money; a dispute should come back keeps.",
   },
   {
     title: "Eight rules for good commit messages",
@@ -1428,7 +1433,7 @@ export const DEMO_PACKS: DemoPack[] = [
     priceGen: "1",
     windowSeconds: 3 * 86400,
     note: "A short craft list on commit messages; rule 6 has no example, breaking promise 1.",
-    hint: "One rule breaks promise P1: it has no example. Every rule is under 150 words, so P2 holds throughout.",
+    hint: "One rule breaks promise P1: it has no Example line. Every rule is under 200 words, so P2 holds throughout.",
   },
 ];
 

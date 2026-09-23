@@ -3,13 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clock, FileText, Hash } from "lucide-react";
+import { ArrowRight, Camera, Clock, FileText, Hash, RefreshCw } from "lucide-react";
 
 import { Address } from "@/components/address";
 import { BuyCard } from "@/components/buy-card";
 import { LedgerTable } from "@/components/ledger-table";
 import { PromisePills } from "@/components/promise-pills";
-import { BlockSkeleton, ReadBlock, ReadError } from "@/components/read-state";
+import { BlockSkeleton, ReadBlock, ReadError, SnapshotBanner, readEach } from "@/components/read-state";
+import { YourRegisterNotice } from "@/components/register-line";
 import { TxRail } from "@/components/tx-rail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,16 @@ import { useRead } from "@/components/use-read";
 import { failureOf, useTx } from "@/components/use-tx";
 import { useWallet } from "@/components/wallet";
 import { WalletGate } from "@/components/wallet-gate";
-import { isMock, readBondFor, readListing, readOrder, readOrdersOf, type Order } from "@/lib/chain";
+import {
+  invalidateReads,
+  isMock,
+  readBondFor,
+  readLedger,
+  readListing,
+  readOrder,
+  readOrdersOf,
+  type LedgerRow,
+} from "@/lib/chain";
 import { packStatus } from "@/lib/api";
 import { isDemoHashes } from "@/lib/demo-keys";
 import { mockPackUploaded } from "@/lib/chain-mock";
@@ -38,15 +48,46 @@ async function readPackPage(id: string) {
     readBondFor(id).catch(() => bondFallback(l.data!.priceAtto)),
     isMock
       ? Promise.resolve(mockPackUploaded(id))
-      : isDemoHashes(l.data.hashes).then((demo) => demo || packStatus(id).then((s) => s.uploaded).catch(() => false)),
+      : isDemoHashes(l.data.hashes).then((demo) => demo || packStatus(id, { demo: false }).then((s) => s.uploaded).catch(() => false)),
   ]);
   return { data: { listing: l.data, bondAtto: bond && bond !== "0" ? bond : bondFallback(l.data.priceAtto), uploaded }, source: l.source } as const;
 }
 
+/** The contract's ledger view answers at most this many rows, newest first. */
+const LEDGER_ROWS = 50;
+/** Orders older than the ledger are read one by one, at most this many per visit; the rest are links. */
+const OLDER_READS = 12;
+
+type PackOrders = { rows: LedgerRow[]; unread: string[] };
+
+/**
+ * The orders of one pack from the ledger view (one read shared with /ledger and /orders), not one
+ * read per order. Only when the ledger is full can older orders of this pack be missing from it:
+ * those are read three at a time, up to OLDER_READS, and the rest are listed as links.
+ */
 async function readPackOrders(id: string) {
-  const ids = await readOrdersOf(id);
-  const rows = (await Promise.all(ids.data.map((o) => readOrder(o)))).map((r) => r.data).filter((o): o is Order => !!o);
-  return { data: rows.reverse(), source: ids.source } as const;
+  const ledger = await readLedger(LEDGER_ROWS);
+  let snapshot = ledger.source === "snapshot";
+  const rows: LedgerRow[] = ledger.data.filter((r) => r.listing === id);
+  const unread: string[] = [];
+  if (ledger.data.length >= LEDGER_ROWS) {
+    const ids = await readOrdersOf(id);
+    snapshot ||= ids.source === "snapshot";
+    const known = new Set(rows.map((r) => r.id));
+    // orders_of is oldest first; read the newest of the missing ones first
+    const older = ids.data.filter((o) => !known.has(o)).reverse();
+    const reads = await readEach(older.slice(0, OLDER_READS), (o) => readOrder(o));
+    reads.forEach((r, i) => {
+      if (r.status === "fulfilled" && r.value.data) {
+        rows.push(r.value.data);
+        snapshot ||= r.value.source === "snapshot";
+      } else {
+        unread.push(older[i]);
+      }
+    });
+    unread.push(...older.slice(OLDER_READS));
+  }
+  return { data: { rows, unread } as PackOrders, source: snapshot ? "snapshot" : "chain" } as const;
 }
 
 export default function PackPage({ params }: { params: Promise<{ id: string }> }) {
@@ -68,6 +109,13 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
   });
 
   const listing = page.data?.listing ?? null;
+  // A snapshot listing may be stale (price, open flag): it is shown, never paid from.
+  const fromSnapshot = page.source === "snapshot";
+  const reread = () => {
+    invalidateReads();
+    page.retry();
+    orders.retry();
+  };
   const isSeller = !!listing && !!w.address && listing.seller.toLowerCase() === w.address.toLowerCase();
   // the pay button needs a wallet on Studio; mock mode has neither
   const needsWallet = !isMock && (!w.address || !w.onStudio);
@@ -95,11 +143,14 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
         }
         emptyWhen={(d) => d === null}
         empty={
-          <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-            The network answered, and there is no listing called <span className="font-mono">{id}</span> on this contract.{" "}
-            <Link href="/shop" className="text-primary underline-offset-4 hover:underline">
-              Back to the shop.
-            </Link>
+          <div className="space-y-3 rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+            <p>
+              The network answered, and there is no listing called <span className="font-mono">{id}</span> on this register.{" "}
+              <Link href="/shop" className="text-primary underline-offset-4 hover:underline">
+                Back to the shop.
+              </Link>
+            </p>
+            <YourRegisterNotice className="justify-center" />
           </div>
         }
       >
@@ -183,9 +234,21 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                   payLabel={`Pay ${price}`}
                   onPay={() => void pay()}
                   busy={tx.sending}
-                  disabled={!l.open || isSeller || (!!tx.hash && !tx.final)}
+                  disabled={!l.open || isSeller || fromSnapshot || (!!tx.hash && !tx.final)}
                   gate={
-                    !l.open ? (
+                    fromSnapshot && !tx.hash ? (
+                      <div className="space-y-2 rounded-lg border border-gold/40 bg-gold/10 p-3 text-sm">
+                        <p className="flex items-center gap-2 font-medium">
+                          <Camera className="size-4 shrink-0 text-gold" /> This listing is shown from a snapshot.
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Studio did not answer, so the price and the open flag above may be out of date. Paying needs the live listing.
+                        </p>
+                        <Button type="button" variant="outline" size="sm" onClick={reread}>
+                          <RefreshCw /> Read it again
+                        </Button>
+                      </div>
+                    ) : !l.open ? (
                       <p className="rounded-lg border bg-muted/40 p-3 text-center text-sm text-muted-foreground">This listing is closed. Existing orders continue.</p>
                     ) : isSeller ? (
                       <p className="rounded-lg border bg-muted/40 p-3 text-center text-sm text-muted-foreground">This is your own pack. A seller cannot buy it.</p>
@@ -196,7 +259,7 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                 >
                   {!d!.uploaded && l.open ? (
                     <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
-                      The seller has not uploaded the pack contents yet. You can still buy: if a section is missing you report it and get a full refund after 24 hours.
+                      The seller has not uploaded the pack contents yet. You can still buy. If a section never arrives, report it: the seller then has 24 hours to put its exact text on chain; if they do not, you get the full price back.
                     </p>
                   ) : null}
                   {tx.error ? <p className="text-sm text-breaks">{tx.error}</p> : null}
@@ -228,8 +291,24 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
           <BlockSkeleton lines={2} />
         ) : orders.error && orders.data === null ? (
           <ReadError onRetry={orders.retry} detail={orders.error} compact />
-        ) : orders.data && orders.data.length > 0 ? (
-          <LedgerTable rows={orders.data} showTitle={false} />
+        ) : orders.data && (orders.data.rows.length > 0 || orders.data.unread.length > 0) ? (
+          <div className="space-y-3">
+            {orders.source === "snapshot" ? <SnapshotBanner /> : null}
+            {orders.data.rows.length > 0 ? <LedgerTable rows={orders.data.rows} showTitle={false} /> : null}
+            {orders.data.unread.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Older orders, not read on this visit:{" "}
+                {orders.data.unread.map((o, i) => (
+                  <span key={o}>
+                    {i > 0 ? ", " : null}
+                    <Link href={`/order/${o}`} className="font-mono text-primary underline-offset-4 hover:underline">
+                      {o}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            ) : null}
+          </div>
         ) : (
           <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No orders yet.</p>
         )}

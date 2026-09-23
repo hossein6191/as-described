@@ -10,7 +10,7 @@ import { useMediaQuery } from "@/components/use-read";
 
 export interface ProductCardProps {
   title: string;
-  /** recipes | templates | notes | prompts | guide | other — picks the cover gradient and emoji */
+  /** recipes | templates | notes | prompts | guide | other: picks the cover gradient and emoji */
   kind: string;
   /** already formatted, e.g. "1 GEN" */
   priceLabel: string;
@@ -52,24 +52,39 @@ function BagIcon() {
   );
 }
 
+/** Why the tally is not a rating: anyone who buys a pack can open a dispute, its seller included. */
+export const TALLY_NOTE =
+  "Disputes settled on this pack, by verdict. Anyone who buys can open one, the seller too from a second wallet, so this is a record of what was judged, not a rating.";
+
+/**
+ * A listing's settled disputes. The words follow the contract: breaks pays the buyer, keeps
+ * pays the seller, unclear splits. It is labelled as disputes, never as promises kept.
+ */
 export function Tally({ kept = 0, broken = 0, unclear = 0, className }: { kept?: number; broken?: number; unclear?: number; className?: string }) {
+  const total = kept + broken + unclear;
   const parts: React.ReactNode[] = [
-    <span key="k" className={kept ? "text-keeps" : undefined}>
-      kept {kept}
-    </span>,
     <span key="b" className={broken ? "text-breaks" : undefined}>
-      broken {broken}
+      buyer won {broken}
+    </span>,
+    <span key="k" className={kept ? "text-keeps" : undefined}>
+      seller won {kept}
     </span>,
   ];
   if (unclear) parts.push(<span key="u">unclear {unclear}</span>);
   return (
-    <span className={cn("flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground", className)}>
-      {parts.map((p, i) => (
-        <span key={i} className="flex items-center gap-1.5">
-          {i > 0 ? <span aria-hidden="true">·</span> : null}
-          {p}
-        </span>
-      ))}
+    <span
+      title={TALLY_NOTE}
+      className={cn("flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground", className)}
+    >
+      <span>{total ? "Disputes settled:" : "Disputes settled: none yet"}</span>
+      {total
+        ? parts.map((p, i) => (
+            <span key={i} className="flex items-center gap-1.5">
+              {i > 0 ? <span aria-hidden="true">·</span> : null}
+              {p}
+            </span>
+          ))
+        : null}
     </span>
   );
 }

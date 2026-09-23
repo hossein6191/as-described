@@ -11,6 +11,11 @@
 // the Studio RPC. On Studio the SDK uses the hash the provider returns as the GenLayer
 // transaction id, so this provider returns exactly what eth_sendRawTransaction answered.
 //
+// Addresses are reported in lowercase, which is what MetaMask hands a site: eth_accounts,
+// eth_requestAccounts and accountsChanged all answer with the lowercase form, so a site that
+// passes what it is given straight to Studio's sim_fundAccount funds nothing (Studio drops an
+// account_address that is not checksummed). Signing uses the account itself, not this spelling.
+//
 // Every method that is not the wallet's own (accounts, chain, signing) is passed through
 // to the Studio RPC unchanged.
 //
@@ -74,6 +79,8 @@
     if (!a) throw rpcError(4100, `no key for account "${state.current}"`);
     return a;
   };
+  /** The spelling a real extension hands the site. */
+  const reported = (a) => a.address.toLowerCase();
 
   function rpcError(code, message, data) {
     const e = new Error(message);
@@ -162,12 +169,12 @@
           const acct = await account();
           state.connected = true;
           persist();
-          return [acct.address];
+          return [reported(acct)];
         }
         case "eth_accounts": {
           if (!state.connected) return [];
           const acct = await account();
-          return [acct.address];
+          return [reported(acct)];
         }
         case "eth_chainId":
           return state.chainHex;
@@ -243,8 +250,8 @@
       state.current = name;
       persist();
       const acct = await account();
-      if (state.connected) emit("accountsChanged", [acct.address]);
-      return acct.address;
+      if (state.connected) emit("accountsChanged", [reported(acct)]);
+      return reported(acct);
     },
     setChain(hex) {
       const h = String(hex).toLowerCase();
@@ -254,10 +261,11 @@
       emit("chainChanged", h);
       return h;
     },
+    /** The address as the site is given it (lowercase); the harness keeps the checksummed one. */
     async address(name) {
       await viem();
       const a = state.accounts[name || state.current];
-      return a ? a.address : "";
+      return a ? reported(a) : "";
     },
     current: () => state.current,
     chain: () => state.chainHex,

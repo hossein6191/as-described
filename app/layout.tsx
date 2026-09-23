@@ -13,11 +13,11 @@ const siteUrl =
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    default: `${SITE_NAME}: ${SITE_TAGLINE}`,
     template: `%s · ${SITE_NAME}`,
   },
   description:
-    "Sell a text pack with promises. Buyers pay into escrow. If a section breaks a promise, five independent validators decide and the money moves by their verdict.",
+    "Sell a text pack with promises. Buyers pay into escrow. If a section breaks a promise, five validators each ask their own model the same two questions, and the money moves on the word the majority stored.",
   applicationName: SITE_NAME,
 };
 

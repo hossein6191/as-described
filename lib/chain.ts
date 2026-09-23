@@ -1,4 +1,4 @@
-// Chain access for As Described — the ONE interface every page codes against.
+// Chain access for As Described: the ONE interface every page codes against.
 // Real implementation: genlayer-js 1.1.8 against GenLayer Studio (chain 61999).
 // Mock implementation (NEXT_PUBLIC_MOCK=1): lib/chain-mock.ts, used for local UI work.
 //
@@ -7,13 +7,18 @@
 // for a healthy contract for about a minute. When a read still fails and data/snapshot.json
 // holds the item, the item is returned with source "snapshot" (the page shows a banner);
 // otherwise a plain Error("could not reach the network") is thrown. A failed read is never
-// "no data", and never proof that a write failed: check the tx votes instead.
+// "no data", and never proof that a write failed: check the tx votes instead. Route handlers
+// (no window) read with a budget of their own: three tries, each given up after ROUTE_READ_MS,
+// no cache, no snapshot.
 //
 // Studio allows 30 gen_call / sim_fundAccount requests a minute from one browser. Every view
 // answer is therefore cached for 30 s (keyed by register, view and args) and two components
 // asking for the same view share one request; a rate-limited read rejects with RATE_LIMITED
 // (see lib/rpc.ts) and the page counts the cooldown down. invalidateReads() drops the cache
-// once a transaction is final or the faucet paid, so the next read is live again.
+// once a transaction is final or the faucet paid, so the next read is live again, and
+// readOrder(id, register, { fresh: true }) drops one order's entry for a page that is waiting
+// for that order to change. The shop reads its listings with one listings() call per 25
+// rows; a register deployed before that view existed is read with listing_ids + listing().
 
 export const CHAIN_ID = 61999;
 export const CHAIN_ID_HEX = "0xf22f";
@@ -71,7 +76,18 @@ export type Order = {
   paidSeller: string;
   windowOpen: boolean;
   bondRequiredAtto: string;
+  /** sections the seller put on chain with reveal(), ascending index (0-based); [] on older registers */
+  revealed: { index: number; text: string }[];
+  /** the sentence the contract wrote from closed tokens once the order reached a final status; "" before */
+  verdictLine: string;
+  /** the order view's own "now" (chain time, ISO); "" when the view did not send one */
+  chainNow: string;
+  /** Date.now() in this browser when that answer arrived; see chainTime() */
+  readAtMs: number;
 };
+
+/** One section put on chain by reveal(). */
+export type RevealedSection = Order["revealed"][number];
 
 export type LedgerRow = Pick<
   Order,
@@ -96,8 +112,11 @@ export type Stats = {
   kept: number;
   broken: number;
   unclear: number;
+  /** refunds of the whole price because a reported section was never revealed (refund_missing only) */
   refunded: number;
   released: number;
+  /** disputes settled by rule because nobody asked the validators in time (settle_stale) */
+  stale: number;
 };
 
 export type Votes = { agree: number; disagree: number; idle: number };
@@ -113,22 +132,52 @@ export type TxStatus = {
 
 export type ReadResult<T> = { data: T; source: "chain" | "snapshot" };
 
+/**
+ * An instant the contract wrote ("2026-09-22T17:52:39.120654Z") in ms; NaN when unreadable.
+ * Fractions past the millisecond are cut (not every browser parses six digits), and an
+ * instant without a zone is UTC, as the contract means it, never the reader's local time.
+ */
+export function parseChainTime(iso: string): number {
+  const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/i.exec(
+    (iso ?? "").trim(),
+  );
+  if (!m) return NaN;
+  const frac = m[2] ? m[2].slice(0, 4) : "";
+  const zone = !m[3] || m[3].toUpperCase() === "Z" ? "Z" : m[3].replace(/^([+-]\d{2}):?(\d{2})$/, "$1:$2");
+  return Date.parse(m[1] + frac + zone);
+}
+
+/**
+ * The chain's clock now, estimated from one order read: the view's own "now" plus the time
+ * this browser has counted since the answer arrived. Windows and deadlines are compared with
+ * this, not with the reader's clock, which can be minutes off. `localNow` when the answer
+ * carried no readable "now" (a snapshot, or a register that does not send one).
+ */
+export function chainTime(o: { chainNow: string; readAtMs: number }, localNow: number = Date.now()): number {
+  const at = parseChainTime(o.chainNow);
+  if (!Number.isFinite(at) || !Number.isFinite(o.readAtMs) || o.readAtMs <= 0) return localNow;
+  return at + (localNow - o.readAtMs);
+}
+
 import * as mock from "./chain-mock";
 import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 import { registerOverride, siteRegister } from "./register";
 import {
   RATE_LIMITED,
+  ROUTE_READ_MS,
+  ROUTE_RETRY,
   createReadCache,
   decodeTx,
-  isRateLimitError,
+  isMissingMethodError,
   noteFailure,
   rpc,
   sleep,
   waitForCooldown,
   withRetry,
   type RawTx,
+  type RetryOptions,
 } from "./rpc";
 import { getChainId, getSigner, chainName } from "./wallet";
 
@@ -155,8 +204,9 @@ const studio = {
 const reader = () => createClient({ chain: studio });
 
 // ---- snapshot fallback (browser only) ---------------------------------------
-// data/snapshot.json is shipped by the ui agent and served by GET /api/snapshot. It is used
-// only when the live read failed after every retry, and every item it yields is labelled.
+// data/snapshot.json is served by GET /api/snapshot. It is used only when the live read
+// failed after every retry, only for the register it was read from, and every item it
+// yields is labelled. A snapshot taken before a field existed gets that field's default.
 
 export type Snapshot = {
   takenAt?: string;
@@ -189,6 +239,28 @@ const byId = <T extends { id: string }>(coll: Record<string, T> | T[] | undefine
 };
 const values = <T>(coll: Record<string, T> | T[] | undefined): T[] =>
   !coll ? [] : Array.isArray(coll) ? coll : Object.values(coll);
+
+/** A snapshot order as an Order today: a copy, with the fields later views added set to their defaults. */
+const snapOrder = (o: Order | null): Order | null =>
+  o
+    ? {
+        ...o,
+        revealed: Array.isArray(o.revealed) ? o.revealed.map((r) => ({ ...r })) : [],
+        verdictLine: typeof o.verdictLine === "string" ? o.verdictLine : "",
+        // a snapshot's clock is hours old: chainTime() falls back to the reader's own
+        chainNow: "",
+        readAtMs: 0,
+      }
+    : null;
+const snapStats = (s: Stats | undefined): Stats | null =>
+  s ? { ...s, stale: typeof s.stale === "number" ? s.stale : 0 } : null;
+/** The snapshot's listings in listing order (listingIds first, when it has them). */
+const snapListings = (s: Snapshot): Listing[] | null => {
+  if (!s.listings) return null;
+  const all = values(s.listings);
+  if (!s.listingIds) return all.slice();
+  return s.listingIds.map((id) => all.find((l) => l.id === id)).filter((l): l is Listing => !!l);
+};
 
 // ---- reading views ----------------------------------------------------------
 
@@ -236,28 +308,92 @@ function parseView(raw: unknown): unknown {
 
 /** How long a view answer is reused. Browser only: a route handler must see the chain as it is. */
 export const READ_TTL_MS = 30_000;
-const views = createReadCache<unknown>(typeof window === "undefined" ? 0 : READ_TTL_MS);
+const onServer = typeof window === "undefined";
+/** Each answer is kept with the moment it arrived, so a cached order still knows how old its "now" is. */
+type Answer = { raw: unknown; at: number };
+const views = createReadCache<Answer>(onServer ? 0 : READ_TTL_MS);
 
 /** Forget every cached view answer. Called once a transaction is final or the faucet paid. */
 export const invalidateReads = () => views.clear();
 
+/** Thrown inside this module when the register has no such view (deployed before it existed). */
+const NO_SUCH_VIEW = "this register has no such view";
+
+/** `p`, but rejected once `ms` have passed with no answer. The abandoned call is left to finish alone. */
+function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what}: no answer in ${Math.round(ms / 1000)} s`)), ms);
+    p.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+const viewKey = (address: string, fn: string, args: (string | number)[]) =>
+  `${address.toLowerCase()}|${fn}|${JSON.stringify(args)}`;
+
+type ViewOptions = {
+  /** drop the cached answer first, so this read is live */
+  fresh?: boolean;
+  /** true for a view an older register may lack: that refusal is not retried and throws NO_SUCH_VIEW */
+  optional?: boolean;
+};
+
 /**
- * One view call with retries, through the cache. Throws RATE_LIMITED when Studio is
- * rate-limiting this browser, the plain network error when it never answered.
+ * One view call with retries, through the cache, with the time its answer arrived. Throws
+ * RATE_LIMITED when Studio is rate-limiting this browser, the plain network error when it
+ * never answered. In a route handler the budget is ROUTE_RETRY: three tries of its own, each
+ * given up after ROUTE_READ_MS, not the shared slots.
  */
-async function view(fn: string, args: (string | number)[] = [], register?: string): Promise<unknown> {
+async function viewAt(
+  fn: string,
+  args: (string | number)[] = [],
+  register?: string,
+  opts: ViewOptions = {},
+): Promise<{ value: unknown; at: number }> {
   const address = register || contractAddress();
   if (!address) throw new Error(NO_REGISTER);
-  const key = `${address.toLowerCase()}|${fn}|${JSON.stringify(args)}`;
+  const key = viewKey(address, fn, args);
+  if (opts.fresh) views.forget(key);
+  const retry: RetryOptions = {
+    ...(onServer ? ROUTE_RETRY : {}),
+    bucket: "gen",
+    giveUp: opts.optional ? isMissingMethodError : undefined,
+  };
   try {
-    const raw = await views.get(key, () =>
-      withRetry(() => reader().readContract({ address: address as Address, functionName: fn, args })),
-    );
-    return parseView(raw);
+    const answer = await views.get(key, async () => {
+      const read = () => reader().readContract({ address: address as Address, functionName: fn, args });
+      const raw = await withRetry(
+        // In a route handler a connection that hangs must not spend the whole request: give up
+        // on it and try again on a new one, inside the same small budget. The browser keeps its
+        // own long schedule, where a slow answer is still better than none.
+        () => (onServer ? within(read(), ROUTE_READ_MS, fn) : read()),
+        retry,
+      );
+      return { raw, at: Date.now() };
+    });
+    return { value: parseView(answer.raw), at: answer.at };
   } catch (e) {
     if (e instanceof Error && e.message === RATE_LIMITED) throw e;
+    if (opts.optional && isMissingMethodError(e)) throw new Error(NO_SUCH_VIEW);
     throw new Error(NETWORK_ERROR);
   }
+}
+
+async function view(
+  fn: string,
+  args: (string | number)[] = [],
+  register?: string,
+  opts: ViewOptions = {},
+): Promise<unknown> {
+  return (await viewAt(fn, args, register, opts)).value;
 }
 
 /** A view answered with nothing (unknown id): null, "", {} or an {error}/{ok:false} shape. */
@@ -311,7 +447,27 @@ const asVerdict = (v: unknown): Verdict => {
   return s === "breaks" || s === "keeps" || s === "unclear" ? s : "";
 };
 
-export function mapOrder(row: Row, id: string): Order {
+/** The order view's `revealed` list: {index, text} rows, one per section, ascending. */
+function mapRevealed(v: unknown): RevealedSection[] {
+  const raw = typeof v === "string" ? parseView(v) : v;
+  if (!Array.isArray(raw)) return [];
+  const out: RevealedSection[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Row;
+    const index = num(r.index, -1);
+    if (!Number.isInteger(index) || index < 0) continue;
+    if (out.some((x) => x.index === index)) continue;
+    out.push({ index, text: str(r.text) });
+  }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+/**
+ * `readAtMs` is when the answer arrived (a cached answer keeps its first arrival), so
+ * chainTime() can add the time that passed since.
+ */
+export function mapOrder(row: Row, id: string, readAtMs: number = Date.now()): Order {
   const status = asStatus(row.status);
   const disputed = str(row.disputed_at ?? row.disputedAt) !== "" ||
     status === "disputed" || status === "settled" || status === "settled_stale";
@@ -319,6 +475,22 @@ export function mapOrder(row: Row, id: string): Order {
   const rawSection = row.section_index ?? row.sectionIndex;
   const rawPromise = row.promise_index ?? row.promiseIndex;
   const rawMissing = row.missing_index ?? row.missingIndex;
+  const revealedText = str(row.revealed_text ?? row.revealedText);
+  const judgedAt = str(row.judged_at ?? row.judgedAt);
+  const missingIndex = missingAt ? num(rawMissing, -1) : -1;
+  let revealed: RevealedSection[];
+  if ("revealed" in row) {
+    revealed = mapRevealed(row.revealed);
+  } else {
+    // A register deployed before `revealed` existed keeps one revealed section in
+    // revealed_text until a judge overwrites it with the judged text. Before any judge, a
+    // reported section that is no longer missing is that section. The page still checks it
+    // against the committed hash before it shows it as delivered.
+    revealed =
+      revealedText && missingIndex >= 0 && status !== "missing" && !judgedAt
+        ? [{ index: missingIndex, text: revealedText }]
+        : [];
+  }
   return {
     id: str(row.id ?? row.order ?? id),
     listing: str(row.listing),
@@ -336,14 +508,18 @@ export function mapOrder(row: Row, id: string): Order {
     bondAtto: atto(row.bond ?? row.bond_atto ?? row.bondAtto),
     disputedAt: str(row.disputed_at ?? row.disputedAt),
     verdict: asVerdict(row.verdict),
-    judgedAt: str(row.judged_at ?? row.judgedAt),
-    revealedText: str(row.revealed_text ?? row.revealedText),
-    missingIndex: missingAt ? num(rawMissing, -1) : -1,
+    judgedAt,
+    revealedText,
+    missingIndex,
     missingAt,
     paidBuyer: atto(row.paid_buyer ?? row.paidBuyer),
     paidSeller: atto(row.paid_seller ?? row.paidSeller),
     windowOpen: bool(row.window_open ?? row.windowOpen),
     bondRequiredAtto: atto(row.bond_required ?? row.bondRequiredAtto ?? row.bond_required_atto),
+    revealed,
+    verdictLine: str(row.verdict_line ?? row.verdictLine),
+    chainNow: str(row.now ?? row.chainNow),
+    readAtMs,
   };
 }
 
@@ -376,21 +552,28 @@ export function mapStats(row: Row): Stats {
     unclear: num(row.unclear),
     refunded: num(row.refunded),
     released: num(row.released),
+    stale: num(row.stale),
   };
 }
 
-/** Live read first; on the plain network error, the snapshot item when it exists. */
+/**
+ * Live read first; on the plain network error, the snapshot item when it exists. `register`
+ * is the register the live read went to (the one in use when left out).
+ */
 async function withSnapshot<T>(
   live: () => Promise<T>,
   fromSnapshot: (s: Snapshot) => T | null | undefined,
+  register?: string,
 ): Promise<ReadResult<T>> {
   try {
     return { data: await live(), source: "chain" };
   } catch (e) {
-    if (e instanceof Error && e.message === NO_REGISTER) throw e;
+    // No register, or a view this register does not have: answers, not an outage.
+    if (e instanceof Error && (e.message === NO_REGISTER || e.message === NO_SUCH_VIEW)) throw e;
     const s = await loadSnapshot();
     // A snapshot only ever stands in for the register it was taken from.
-    const same = !!s?.register && s.register.toLowerCase() === contractAddress().toLowerCase();
+    const read = (register || contractAddress()).toLowerCase();
+    const same = !!s?.register && s.register.toLowerCase() === read;
     const item = s && same ? fromSnapshot(s) : null;
     if (item !== null && item !== undefined) return { data: item, source: "snapshot" };
     if (e instanceof Error && (e.message === NETWORK_ERROR || e.message === RATE_LIMITED)) throw e;
@@ -398,12 +581,45 @@ async function withSnapshot<T>(
   }
 }
 
+/**
+ * Runs `read` over `items` with at most `limit` in flight, results in order. The first
+ * failure rejects the whole run and nothing new starts after it: a failed read is never
+ * "no data", so a list with a hole in it is not an answer.
+ */
+async function eachLimited<T, R>(items: readonly T[], limit: number, read: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const i = next++;
+      try {
+        out[i] = await read(items[i]);
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
+  return out;
+}
+
+/**
+ * The source of a list built from several reads: "snapshot" as soon as one item came from
+ * the snapshot, so a page never shows snapshot rows mixed into live ones without its banner.
+ */
+export const readSource = (results: readonly { source: "chain" | "snapshot" }[]): "chain" | "snapshot" =>
+  results.some((r) => r.source === "snapshot") ? "snapshot" : "chain";
+
 // ---- reads (no wallet) --------------------------------------------------
-export async function readListingIds(): Promise<ReadResult<string[]>> {
+/** `register` names another register than the one in use. */
+export async function readListingIds(register?: string): Promise<ReadResult<string[]>> {
   if (isMock) return mock.readListingIds();
   return withSnapshot(
-    async () => list(await view("listing_ids")),
+    async () => list(await view("listing_ids", [], register)),
     (s) => s.listingIds ?? (s.listings ? values(s.listings).map((l) => l.id) : null),
+    register,
   );
 }
 /** `register` names another register than the one in use (the delivery API passes the caller's). */
@@ -418,16 +634,131 @@ export async function readListing(
       return isEmptyRow(v) ? null : mapListing(v as Row, id);
     },
     (s) => byId(s.listings, id),
+    register,
   );
 }
-export async function readOrder(id: string, register?: string): Promise<ReadResult<Order | null>> {
+
+/** Rows per listings() call: the contract clamps a page to 1..25. */
+export const LISTINGS_PAGE = 25;
+/** More pages than this is a runaway loop, not a shop (1000 listings). */
+const MAX_LISTING_PAGES = 40;
+/** Registers (lowercase) that answered they have no listings() view: asked once, then read row by row. */
+const withoutListingsView = new Set<string>();
+
+/** One page of listings(): how many the register holds, and the rows asked for. */
+export type ListingPage = { total: number; rows: Listing[] };
+
+/** The listings() answer: {"total": n, "rows": [<listing row>, …]}. */
+export function mapListingPage(v: unknown): ListingPage {
+  const o = v && typeof v === "object" && !Array.isArray(v) ? (v as Row) : {};
+  const raw = typeof o.rows === "string" ? parseView(o.rows) : o.rows;
+  const rows = (Array.isArray(raw) ? raw : [])
+    .map((r) => (typeof r === "string" ? parseView(r) : r))
+    .filter((r): r is Row => !isEmptyRow(r))
+    .map((r) => mapListing(r, str(r.listing ?? r.id)));
+  return { total: Math.max(0, num(o.total, rows.length)), rows };
+}
+
+/**
+ * One listings() page, or null when this register has no such view (it is then remembered,
+ * and the caller reads listing_ids + listing() instead). A snapshot stands in when Studio
+ * never answered.
+ */
+async function listingsView<T>(
+  register: string,
+  live: () => Promise<T>,
+  fromSnapshot: (s: Snapshot) => T | null,
+): Promise<ReadResult<T> | null> {
+  const key = register.toLowerCase();
+  if (withoutListingsView.has(key)) return null;
+  try {
+    return await withSnapshot(live, fromSnapshot, register);
+  } catch (e) {
+    if (!(e instanceof Error && e.message === NO_SUCH_VIEW)) throw e;
+    withoutListingsView.add(key);
+    return null;
+  }
+}
+
+/** listing_ids + one listing() per id, at most 3 in flight: the read for a register without listings(). */
+async function listingsRowByRow(
+  register: string,
+  pick: (ids: string[]) => string[],
+): Promise<ReadResult<ListingPage>> {
+  const ids = await readListingIds(register);
+  const rows = await eachLimited(pick(ids.data), 3, (id) => readListing(id, register));
+  return {
+    data: { total: ids.data.length, rows: rows.map((r) => r.data).filter((l): l is Listing => !!l) },
+    source: readSource([ids, ...rows]),
+  };
+}
+
+/**
+ * Listings in listing order (L1 first), `limit` (1..25) from the 0-based `offset`, with the
+ * total. One gen_call per page on a register with listings(); an older register is read
+ * with listing_ids + listing(), at most 3 at a time.
+ */
+export async function readListings(offset: number, limit: number): Promise<ReadResult<ListingPage>> {
+  if (isMock) return mock.readListings(offset, limit);
+  const register = contractAddress();
+  if (!register) throw new Error(NO_REGISTER);
+  const start = Math.max(0, Math.trunc(offset) || 0);
+  const size = Math.max(1, Math.min(LISTINGS_PAGE, Math.trunc(limit) || LISTINGS_PAGE));
+  const page = await listingsView(
+    register,
+    async () => mapListingPage(await view("listings", [String(start), String(size)], register, { optional: true })),
+    (s) => {
+      const all = snapListings(s);
+      return all ? { total: all.length, rows: all.slice(start, start + size) } : null;
+    },
+  );
+  return page ?? listingsRowByRow(register, (ids) => ids.slice(start, start + size));
+}
+
+/** Every listing in listing order (L1 first): listings() page by page, or row by row on an older register. */
+export async function readAllListings(): Promise<ReadResult<Listing[]>> {
+  if (isMock) return mock.readAllListings();
+  const register = contractAddress();
+  if (!register) throw new Error(NO_REGISTER);
+  const all = await listingsView(
+    register,
+    async () => {
+      const rows: Listing[] = [];
+      let total = Number.POSITIVE_INFINITY;
+      for (let n = 0; n < MAX_LISTING_PAGES && rows.length < total; n++) {
+        const p = mapListingPage(
+          await view("listings", [String(rows.length), String(LISTINGS_PAGE)], register, { optional: true }),
+        );
+        total = p.total;
+        if (!p.rows.length) break;
+        rows.push(...p.rows);
+      }
+      return rows;
+    },
+    snapListings,
+  );
+  if (all) return all;
+  const r = await listingsRowByRow(register, (ids) => ids);
+  return { data: r.data.rows, source: r.source };
+}
+
+/**
+ * `register` names another register than the one in use. `fresh` drops this order's cached
+ * answer first: for a page waiting for a write to show, where the cached row is the old one.
+ */
+export async function readOrder(
+  id: string,
+  register?: string,
+  opts: { fresh?: boolean } = {},
+): Promise<ReadResult<Order | null>> {
   if (isMock) return mock.readOrder(id);
   const r = await withSnapshot(
     async () => {
-      const v = await view("order", [id], register);
-      return isEmptyRow(v) ? null : mapOrder(v as Row, id);
+      const { value, at } = await viewAt("order", [id], register, { fresh: opts.fresh });
+      return isEmptyRow(value) ? null : mapOrder(value as Row, id, at);
     },
-    (s) => byId(s.orders, id),
+    (s) => snapOrder(byId(s.orders, id)),
+    register,
   );
   // The order row carries no title of its own; borrow it from the listing when missing
   // (the listing is usually already in the read cache from the page that led here).
@@ -484,11 +815,17 @@ export async function readLedger(count: number): Promise<ReadResult<LedgerRow[]>
     },
   );
 }
-export async function readStats(): Promise<ReadResult<Stats>> {
+/** `register` names another register than the one in use (a probe of a pasted address reads its stats). */
+export async function readStats(register?: string): Promise<ReadResult<Stats>> {
   if (isMock) return mock.readStats();
   return withSnapshot(
-    async () => mapStats((await view("stats")) as Row),
-    (s) => s.stats ?? null,
+    async () => {
+      const v = await view("stats", [], register);
+      if (isEmptyRow(v)) throw new Error(NETWORK_ERROR);
+      return mapStats(v as Row);
+    },
+    (s) => snapStats(s.stats),
+    register,
   );
 }
 export async function readBondFor(listing: string): Promise<string> {
@@ -537,7 +874,7 @@ export async function write(
 ): Promise<string> {
   if (isMock) return mock.write(fn, args, valueAtto);
   const address = contractAddress();
-  if (!address) throw new Error("This site is not pointed at a register yet. Deploy one from the Deploy page, or wait for the site owner.");
+  if (!address) throw new Error("This site is not pointed at a register yet. Deploy your own from the Deploy page; it takes one signature and this browser then reads it.");
   const signer = getSigner();
   if (!signer) throw new Error("Connect a wallet first.");
   // Studio is gasless and genlayer-js skips its own chain check for it, so the refusal to
@@ -591,7 +928,7 @@ export async function deploy(code: string): Promise<string> {
 /** The address a deploy transaction created; "" until the network has accepted it. */
 export async function deployedAddress(hash: string): Promise<string> {
   if (isMock) return "0x" + "ad".repeat(20);
-  const tx = await withRetry(() => rpc<RawTx | null>("eth_getTransactionByHash", [hash]), 2);
+  const tx = await withRetry(() => rpc<RawTx | null>("eth_getTransactionByHash", [hash]), { tries: 2, bucket: "eth" });
   const data = tx?.data as { contract_address?: string } | undefined;
   return typeof data?.contract_address === "string" ? data.contract_address : "";
 }
@@ -600,54 +937,70 @@ export async function deployedAddress(hash: string): Promise<string> {
 export async function txStatus(hash: string): Promise<TxStatus> {
   if (isMock) return mock.txStatus(hash);
   // Two quick tries: the caller polls anyway, so a dropped request is just a later poll.
-  const tx = await withRetry(() => rpc<RawTx | null>("eth_getTransactionByHash", [hash]), 2);
+  // eth_* has its own bucket, so a gen_call cooldown never stalls the rail.
+  const tx = await withRetry(() => rpc<RawTx | null>("eth_getTransactionByHash", [hash]), { tries: 2, bucket: "eth" });
   return decodeTx(tx);
 }
 
 /** Balance in atto of an address (eth_getBalance). */
 export async function balanceOf(address: string): Promise<bigint> {
   if (isMock) return mock.balanceOf(address);
-  const hex = await withRetry(() => rpc<string>("eth_getBalance", [address, "latest"]), 3);
+  const hex = await withRetry(() => rpc<string>("eth_getBalance", [address, "latest"]), { tries: 3, bucket: "eth" });
   return BigInt(hex || "0x0");
 }
 
 /** Pause between faucet tries: sim_fundAccount shares the 30/min bucket with the reads. */
 const FAUCET_PAUSE_MS = 10_000;
 const FAUCET_TRIES = 3;
+/** How long the faucet waits for the credit to show in the balance. */
+const FAUCET_WAIT_MS = 60_000;
 
 /**
  * Faucet: sim_fundAccount with 10 GEN (amount in wei as a JS number), up to three tries ten
- * seconds apart, each one after the shared cooldown. Resolves when the balance moved; a
- * refusal on every try is FAUCET_REFUSED.
+ * seconds apart, each one after the gen_call cooldown. Resolves when the balance moved; a
+ * refusal on every try is FAUCET_REFUSED. `stillWanted` is asked between balance polls: once
+ * it says no (the wallet switched accounts), the wait ends with an error nobody shows.
  */
-export async function faucet(address: string): Promise<bigint> {
+export async function faucet(
+  address: string,
+  opts: { stillWanted?: () => boolean } = {},
+): Promise<bigint> {
   if (isMock) return mock.faucet(address);
+  // Studio credits only a checksummed address: sim_fundAccount with the lowercase spelling
+  // the site keeps is accepted, finalizes with value 10 GEN, and never reaches the balance.
+  let account: string;
+  try {
+    account = getAddress(address);
+  } catch {
+    throw new Error("That is not a valid 0x address, so the faucet was not asked.");
+  }
   let before: bigint;
   try {
-    before = await balanceOf(address);
-  } catch (e) {
-    throw new Error(isRateLimitError(e) || (e instanceof Error && e.message === RATE_LIMITED) ? FAUCET_REFUSED : NETWORK_ERROR);
+    before = await balanceOf(account);
+  } catch {
+    throw new Error("Could not read this wallet's balance from Studio, so the faucet was not asked. Try again in a few seconds.");
   }
   let sent = false;
   for (let i = 0; i < FAUCET_TRIES && !sent; i++) {
-    await waitForCooldown();
+    await waitForCooldown("gen");
     try {
       // `amount` is wei as a JS number; a decimal string makes the node compare str with int.
-      await rpc("sim_fundAccount", { account_address: address, amount: 10e18 });
+      await rpc("sim_fundAccount", { account_address: account, amount: 10e18 });
       sent = true;
     } catch (e) {
       // A refusal is a refusal whatever the shape: 429 behind CORS, -32029, or a dropped
-      // request. A rate-limited one also starts the shared cooldown, so the reads back off too.
-      noteFailure(e);
+      // request. A rate-limited one also starts the gen_call cooldown, so the reads back off too.
+      noteFailure(e, Date.now(), "gen");
       if (i === FAUCET_TRIES - 1) throw new Error(FAUCET_REFUSED);
       await sleep(FAUCET_PAUSE_MS);
     }
   }
   const started = Date.now();
-  while (Date.now() - started < 60_000) {
+  while (Date.now() - started < FAUCET_WAIT_MS) {
     await sleep(2000);
+    if (opts.stillWanted && !opts.stillWanted()) throw new Error("The faucet wait ended: the wallet switched accounts.");
     try {
-      const now = await balanceOf(address);
+      const now = await balanceOf(account);
       if (now !== before) return now;
     } catch {
       /* a dropped poll is not a failed faucet; keep polling */

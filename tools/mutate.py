@@ -3,7 +3,9 @@
     ~/gl-primitives/.venv/bin/python tools/mutate.py     # writes tests/MUTATIONS.md; exit 1 if any mutant survives
 The harness refuses to run over a failing baseline, and treats a mutant that
 does not even import as a broken anchor, never as a kill. The suite reads the
-contract from AS_DESCRIBED_SOURCE, which is how each mutant is fed to it.
+contract from AS_DESCRIBED_SOURCE, which is how each mutant is fed to it. A
+mutation is one (old, new) pair, or a list of them when moving a defence takes
+two edits; every anchor must appear exactly once in the contract.
 """
 import os, pathlib, re, subprocess, sys, tempfile
 
@@ -13,19 +15,38 @@ PYTEST = [sys.executable, "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:c
 
 MUTATIONS = [
     # --- the prompt boundary
-    ("fence does nothing", 'return str(raw).replace("<", "(").replace(">", ")")', 'return str(raw)'),
-    ("fence deletes instead of replacing", 'return str(raw).replace("<", "(").replace(">", ")")', 'return str(raw).replace("<", "").replace(">", "")'),
-    ("the promise goes in unfenced", '"<<<PROMISE>>>\\n" + _fence(promise_text)[:MAX_PROMISE_CHARS]', '"<<<PROMISE>>>\\n" + promise_text[:MAX_PROMISE_CHARS]'),
-    ("the section goes in unfenced", '"<<<SECTION>>>\\n" + _fence(section_text)[:MAX_SECTION_CHARS]', '"<<<SECTION>>>\\n" + section_text[:MAX_SECTION_CHARS]'),
+    ("fence does nothing", 'return str(raw).translate(FENCE_TABLE)', 'return str(raw)'),
+    ("fence deletes instead of replacing", 'return str(raw).translate(FENCE_TABLE)',
+     'return str(raw).translate({ord(ch): None for ch in FENCE_OPENERS + FENCE_CLOSERS})'),
+    ("the fence misses the look-alike angle brackets", 'FENCE_TABLE = str.maketrans(FENCE_OPENERS + FENCE_CLOSERS, "(" * len(FENCE_OPENERS) + ")" * len(FENCE_CLOSERS))',
+     'FENCE_TABLE = str.maketrans("<>", "()")'),
+    ("the delimiters carry no tag of their own", 'tag = _sha256(body)[:FENCE_TAG_CHARS]', 'tag = "0" * FENCE_TAG_CHARS'),
+    ("a block's closing line carries another tag", '"<<<" + name + " " + tag + ">>>\\n" + body + "\\n<<<END " + name + " " + tag + ">>>"',
+     '"<<<" + name + " " + tag + ">>>\\n" + body + "\\n<<<END " + name + " " + tag[::-1] + ">>>"'),
+    ("the promise goes in unfenced", '_block("PROMISE", _fence(promise_text)[:MAX_PROMISE_CHARS])', '_block("PROMISE", promise_text[:MAX_PROMISE_CHARS])'),
+    ("the section goes in unfenced", '_block("SECTION", _fence(section_text)[:MAX_SECTION_CHARS])', '_block("SECTION", section_text[:MAX_SECTION_CHARS])'),
     ("the section is not capped before the prompt", '_fence(section_text)[:MAX_SECTION_CHARS]', '_fence(section_text)'),
     ("the second framing is the first framing", 'question = QUESTION_BREAK if framing == "break" else QUESTION_KEEP', 'question = QUESTION_BREAK'),
     ("the leader asks the BREAK question twice", 'section_text, section_no, section_total, "keep"), response_format="json")', 'section_text, section_no, section_total, "break"), response_format="json")'),
+    ("a promise may span lines", '            if text.splitlines() != [text]:\n                _fail("each promise is one line, with no line breaks")\n', ''),
     # --- the closed set
+    ("a boolean answer is mapped the wrong way round", '        value = "yes" if value else "no"', '        value = "no" if value else "yes"'),
+    ("a view argument of any length is read as a number", '    if not s or len(s) > 40 or any(ch not in "0123456789" for ch in s):',
+     '    if not s or any(ch not in "0123456789" for ch in s):'),
     ("the answer may be anything", '    if answer not in ANSWERS:\n        raise gl.vm.UserError(ERROR_LLM + " the judge answered outside the set: " + answer[:40])\n', ''),
     ("a disagreement between the framings is forgiven", '    if breaks_answer == "yes" and keeps_answer == "no":\n        return "breaks"', '    if breaks_answer == "yes":\n        return "breaks"'),
+    ("the round's result is not checked to be an object", '        if not isinstance(settled, dict):\n            raise gl.vm.UserError(ERROR_LLM + " the round returned no verdict")\n', ''),
     ("the round's verdict is not checked against the set", '        if verdict not in VERDICTS:\n            raise gl.vm.UserError(ERROR_LLM + " the round returned no verdict")\n', ''),
+    ("the leader's framing answers reach the receipt unchecked", '        if a not in ANSWERS or b not in ANSWERS or _combine(a, b) != verdict:\n            a = b = ""\n', ''),
+    # --- the consensus closures
     ("the validator agrees with anything", '            return str(theirs.get("verdict", "")) == mine["verdict"]', '            return True'),
+    ("the validator's comparison is always true", '            return str(theirs.get("verdict", "")) == mine["verdict"]', '            return str(theirs.get("verdict", "")) == mine["verdict"] or True'),
+    ("the validator copies the leader instead of running itself", '                mine = leader_fn()', '                mine = {"verdict": theirs.get("verdict", "")}'),
+    ("the validator also compares the framing answers", '            return str(theirs.get("verdict", "")) == mine["verdict"]',
+     '            return str(theirs.get("verdict", "")) == mine["verdict"] and theirs.get("a") == mine["a"]'),
     ("the validator does not wrap its own run", '            try:\n                mine = leader_fn()\n            except Exception:\n                return False\n', '            mine = leader_fn()\n'),
+    ("a leader error is agreed although the validator's own run worked", '        leader_fn()\n        return False\n', '        leader_fn()\n        return True\n'),
+    ("every failure the validator hits is agreed", '            return True\n        return False\n    except Exception:\n        return False\n', '            return True\n        return True\n    except Exception:\n        return True\n'),
     # --- listing
     ("an uppercase hash is accepted", 'all(ch in HASH_CHARS for ch in raw)', 'all(ch.lower() in HASH_CHARS for ch in raw)'),
     ("any number of promises is accepted", 'len(raw) < MIN_PROMISES or len(raw) > MAX_PROMISES', 'len(raw) < MIN_PROMISES'),
@@ -47,8 +68,11 @@ MUTATIONS = [
     ("a refused dispute keeps the bond", '            if value > u256(0):\n                _Payee(sender).emit_transfer(value=value)\n            return json.dumps({"ok": False, "reason": problem + "; your funds were returned"})\n        order.status = STATUS_DISPUTED', '            return json.dumps({"ok": False, "reason": problem + "; your funds were returned"})\n        order.status = STATUS_DISPUTED'),
     # --- judge
     ("judge runs on any status", '        if order.status != STATUS_DISPUTED:\n            if order.verdict:', '        if False:\n            if order.verdict:'),
-    ("judge accepts an oversized section", '            _fail("a section is at most " + str(MAX_SECTION_CHARS) + " characters")\n        listing = self._listing', '            pass\n        listing = self._listing'),
     ("judge accepts a text with the wrong hash", '            _fail("the text does not match the hash the seller committed for section " + str(section + 1))\n        digest = ', '            pass\n        digest = '),
+    ("an oversize committed section is asked of the model", '        oversize = len(section_text) > MAX_SECTION_CHARS', '        oversize = False'),
+    ("an oversize committed section pays the seller", '            verdict, first, second = "breaks", "", ""', '            verdict, first, second = "keeps", "", ""'),
+    ("an oversize committed section is refused instead of settled", '        promise = int(order.promise_index)\n        if _sha256(section_text)',
+     '        promise = int(order.promise_index)\n        if len(section_text) > MAX_SECTION_CHARS:\n            _fail("a section is at most " + str(MAX_SECTION_CHARS) + " characters")\n        if _sha256(section_text)'),
     ("the same digest is judged twice", '        if digest in self.judged_digests:\n            _fail("this section and promise were already judged for this order")\n', ''),
     ("breaks pays the seller", '            to_buyer, to_seller = price + bond, 0', '            to_buyer, to_seller = 0, price + bond'),
     ("keeps pays the buyer", '            to_buyer, to_seller = 0, price + bond\n            listing.kept', '            to_buyer, to_seller = price + bond, 0\n            listing.kept'),
@@ -59,9 +83,15 @@ MUTATIONS = [
     ("release with no readable clock", '        if now_seconds < 0:\n            _fail("the network clock could not be read; try again")\n        if now_seconds < int(order.deadline_seconds):', '        if now_seconds < int(order.deadline_seconds):'),
     ("a stranger may report a section missing", '        if gl.message.sender_address != order.buyer:\n            _fail("only the buyer of this order may report a section missing")\n', ''),
     ("a missing report after the deadline", '        if now_seconds >= int(order.deadline_seconds):\n            _fail("the dispute window closed at " + str(order.deadline_at))\n        section = _digits(section_index)', '        section = _digits(section_index)'),
-    ("a revealed section can be reported missing again", '        if order.revealed_text and int(order.missing_index) == section:\n            _fail("section " + str(section + 1) + " is already on chain; read it from the order")\n', ''),
+    ("a revealed section can be reported missing again", '        if int(order.revealed_mask) & (1 << section):\n            _fail("section " + str(section + 1) + " is already on chain; read it from the order")\n', ''),
+    ("the report marks the section revealed, not the reveal", [
+        ('        order.revealed_mask = u32(int(order.revealed_mask) | (1 << section))\n        self.reveals', '        self.reveals'),
+        ('        order.missing_index = u32(section)\n', '        order.missing_index = u32(section)\n        order.revealed_mask = u32(int(order.revealed_mask) | (1 << section))\n')]),
+    ("a revealed text is not kept per section", '        self.reveals[order_id + ":" + str(section)] = section_text\n', ''),
+    ("a report wipes what the seller already revealed", '        order.missing_at = now\n', '        order.missing_at = now\n        order.revealed_text = ""\n'),
     ("a stranger may reveal", '        if gl.message.sender_address != order.seller:\n            _fail("only the seller reveals a section")\n', ''),
     ("reveal accepts a text with the wrong hash", '            _fail("the text does not match the hash the seller committed for section " + str(section + 1))\n        extended = ', '            pass\n        extended = '),
+    ("a committed section over the cap may be put on chain", '        if len(section_text) > MAX_SECTION_CHARS:\n            _fail("a section is at most " + str(MAX_SECTION_CHARS) + " characters")\n', ''),
     ("reveal after the 24 hours", '        if now_seconds >= since + REVEAL_HOURS * 3600:\n            _fail("the " + str(REVEAL_HOURS) + " hours to reveal have passed; the buyer may take a refund")\n', ''),
     ("reveal never extends the deadline", '        if extended > int(order.deadline_seconds):', '        if False:'),
     ("refund_missing before the 24 hours", '        if now_seconds < since + REVEAL_HOURS * 3600:\n            _fail("the seller has " + str(REVEAL_HOURS) + " hours from the report to reveal the section")\n', ''),
@@ -69,6 +99,17 @@ MUTATIONS = [
     ("settle_stale before the 24 hours", '        if now_seconds < since + STALE_HOURS * 3600:\n            _fail("a dispute may be settled by rule " + str(STALE_HOURS) + " hours after it was opened; judge it instead")\n', ''),
     ("settle_stale pays the bond to the seller", '        to_buyer, to_seller = int(order.bond), int(order.price)', '        to_buyer, to_seller = 0, int(order.bond) + int(order.price)'),
     ("settle_stale on any status", '        if order.status != STATUS_DISPUTED:\n            _fail("nothing stale to settle: the order is " + str(order.status))\n', ''),
+    ("a judged order is settled by rule as well", '        if order.verdict:\n            _fail("this order has a verdict; it is not stale")\n', ''),
+    # --- the contract's own sentence, and the batch view
+    ("no sentence is written when an order ends", '        order.verdict_line = _verdict_line(status, str(order.verdict), int(order.section_index) + 1, int(order.promise_index) + 1,\n                                           int(order.missing_index) + 1, to_buyer, to_seller, oversize)\n', ''),
+    ("the sentence counts sections and promises from zero", '_verdict_line(status, str(order.verdict), int(order.section_index) + 1, int(order.promise_index) + 1,', '_verdict_line(status, str(order.verdict), int(order.section_index), int(order.promise_index),'),
+    ("the sentence reports the amounts the other way round", '                                           int(order.missing_index) + 1, to_buyer, to_seller, oversize)', '                                           int(order.missing_index) + 1, to_seller, to_buyer, oversize)'),
+    ("the ledger view is not bounded", 'MAX_LEDGER_ROWS = 50', 'MAX_LEDGER_ROWS = 5000'),
+    ("the order view calls the window open after the deadline",
+     '        row["window_open"] = str(o.status) == STATUS_PAID and (now_seconds < 0 or now_seconds < int(o.deadline_seconds))',
+     '        row["window_open"] = str(o.status) == STATUS_PAID'),
+    ("the listings page ignores its offset", '        i = offset\n        while i < total and len(rows) < limit:', '        i = 0\n        while i < total and len(rows) < limit:'),
+    ("the listings page is not capped", '        if limit < 0 or limit > MAX_LISTING_PAGE:', '        if limit < 0:'),
 ]
 
 
@@ -97,10 +138,14 @@ def main() -> int:
         print("the unmutated suite does not pass; a mutation table over a failing suite proves nothing"); print((baseline.stdout + baseline.stderr)[-600:]); return 3
     rows, escaped = [], []
     with tempfile.TemporaryDirectory() as tmp:
-        for name, old, new in MUTATIONS:
-            if SRC.count(old) != 1:
-                print(f"  ! anchor not found exactly once ({SRC.count(old)}): {name}"); return 2
-            path = pathlib.Path(tmp) / f"as_described_{len(rows) + len(escaped)}.py"; path.write_text(SRC.replace(old, new), encoding="utf-8")
+        for name, *rest in MUTATIONS:
+            edits = rest[0] if len(rest) == 1 else [(rest[0], rest[1])]
+            text = SRC
+            for old, new in edits:
+                if SRC.count(old) != 1:
+                    print(f"  ! anchor not found exactly once ({SRC.count(old)}): {name}"); return 2
+                text = text.replace(old, new)
+            path = pathlib.Path(tmp) / f"as_described_{len(rows) + len(escaped)}.py"; path.write_text(text, encoding="utf-8")
             killer = run(path); (rows if killer else escaped).append((name, killer))
             print(f"  {'killed ' if killer else 'ESCAPED'}  {name}" + (f"  ← {killer}" if killer else ""))
     if escaped:

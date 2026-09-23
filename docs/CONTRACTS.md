@@ -23,11 +23,13 @@ section hashes as JSON strings, price (atto), window (seconds), created_at, open
 tallies orders / kept / broken / unclear. `TreeMap[str, Order]` of scalars: listing, buyer,
 seller, price, opened_at, deadline_at (ISO) and deadline_seconds (the integer that is
 compared), status, the disputed section and promise (0-based), bond, disputed_at, verdict,
-judged_at, judgments, revealed_text, missing_index, missing_at, paid_buyer, paid_seller,
-settled_by. Ids are contract-assigned and sequential (`L1, L2, …`, `O1, O2, …`). Three
-indexes: order ids per listing, order ids per buyer (lowercase hex), and
-`judged_digests` — sha256(order|section|promise|text) → judged once. Six top-level
-counters feed `stats()`.
+judged_at, judgments, revealed_text, revealed_mask (bit *i* set once section *i* is on
+chain), missing_index, missing_at, paid_buyer, paid_seller, settled_by, and verdict_line —
+the one sentence the contract writes from closed tokens when an order reaches a final
+status. Ids are contract-assigned and sequential (`L1, L2, …`, `O1, O2, …`). Four indexes:
+order ids per listing, order ids per buyer (lowercase hex), `reveals` — `"O3:0"` → the
+exact text of a revealed section, kept for good — and `judged_digests` —
+sha256(order|section|promise|text) → judged once. Six top-level counters feed `stats()`.
 
 Status machine:
 
@@ -57,13 +59,16 @@ seller; `unclear` → price to the seller, bond back to the buyer.
 | `refund_missing(order_id)` | anyone (open on purpose) | no | status missing and 24 h passed → price to the buyer, no model |
 | `settle_stale(order_id)` | anyone (open on purpose) | no | status disputed, no verdict, 24 h passed → price to the seller, bond to the buyer |
 
-Views: `listing(id)`, `listing_ids()`, `order(id)` (adds `bond_required`, `window_open`, `now`),
-`orders_of(listing)`, `orders_of_buyer(hex)`, `ledger(count)` (last N, newest first, ≤ 50),
-`stats()`, `bond_for(listing)`, `rules()`.
+Views: `listing(id)`, `listing_ids()`, `listings(offset, limit)` (a page of listing rows,
+oldest first, limit clamped to 1–25 — one call for a shelf instead of one read per pack),
+`order(id)` (adds `bond_required`, `window_open`, `now`, `revealed` — every section on chain
+as `{index, text}` — and `verdict_line`), `orders_of(listing)`, `orders_of_buyer(hex)`,
+`ledger(count)` (last N, newest first, ≤ 50), `stats()` (listings, orders, kept, broken,
+unclear, refunded, released, stale), `bond_for(listing)`, `rules()`.
 
 Constants: title 3–60 chars; kinds `recipes | templates | notes | prompts | guide | other`;
-1–6 promises of 8–160 chars; 1–20 sections, each hash 64 lowercase hex of the exact utf-8
-bytes; a section ≤ 4000 chars when revealed or judged; price 0.1–1000 GEN; window 5 min –
+1–6 promises of 8–160 chars, each one line; 1–20 sections, each hash 64 lowercase hex of the
+exact utf-8 bytes; a section ≤ 4000 chars when revealed; price 0.1–1000 GEN; window 5 min –
 30 days; bond 20 % of the price (floor 0.01 GEN); reveal and stale windows 24 h.
 
 **Reuse.** Any sale of committed text under stated promises: a document pack, a dataset
@@ -76,10 +81,21 @@ with no model.
 that needs the whole pack ("no two recipes repeat") is judged section by section and may
 come back `unclear`. Sections are bound by hash, not by content: a seller can commit a hash
 of a section they never deliver, which is what `report_missing` → `refund_missing` is for.
-A section over 4000 characters can be neither revealed nor judged; on chain such a section
-is, in effect, missing (the site caps uploads at 1500). The clock is the transaction's own
-datetime; every time-gated write refuses when it cannot be read rather than guessing. A
-buyer can report sections missing one at a time to stall a seller for up to one reveal per
-section; the money still moves at the end. Which model the validators run is not a fact
-the contract knows: a verdict is what independent runs agreed on, not a truth about the
-section.
+A section over 4000 characters cannot be revealed, so on chain such a section is in effect
+missing and ends in `refund_missing`; in a dispute it is not refused but settled `breaks`
+by rule, with no model asked, because the cap is published and the seller committed past
+it. The site allows 12 sections of up to 4000 characters, the contract 20. The clock is the
+transaction's own datetime; every time-gated write refuses when it cannot be read rather
+than guessing. Which model the validators run is not a fact the contract knows: a verdict
+is what independent runs agreed on, not a truth about the section.
+
+A section can be reported missing only once, because a revealed section is on chain for
+good, so one section can move the deadline out by at most 24 hours. Across a pack, though, a
+buyer who reports every section in turn can make the seller either publish the whole pack on
+chain or lose the price: each report costs the seller a reveal, and a section the seller
+does not reveal is refunded in full by `refund_missing`, which anybody may call. That costs
+the buyer one purchase at the listed price and leaves the escrow held for up to 20 × 24
+hours, and after it the pack's text is public on chain for everyone. It is a real cost of
+the model-free delivery guarantee, and it is stated rather than patched: a bond on
+`report_missing` would put a second signature in front of every buyer whose pack did not
+arrive.

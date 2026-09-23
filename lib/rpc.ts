@@ -8,13 +8,16 @@
 // A failed read is never an answer: callers must say "could not reach the network", never
 // "no data", and must never conclude a write failed from a read that failed.
 //
-// Studio also rate-limits: every gen_call (contract read) and sim_fundAccount from one
-// browser shares a bucket of 30 requests a minute (eth_* reads have their own 300/min). A
-// 429 carries no Access-Control-Allow-Origin header, so in the browser it only surfaces as
-// the CORS TypeError "Failed to fetch". Retrying that eight times is what empties the bucket
-// for everyone else on the page, so a rate-limited request stops at once, starts one shared
-// cooldown, and rejects with RATE_LIMITED; requests that begin during the cooldown wait for
-// it to end, then try. The helpers here are pure and unit-tested from node.
+// Studio also rate-limits, in two buckets per client: every gen_call (contract read) and
+// sim_fundAccount share 30 requests a minute ("gen"), and eth_* reads have their own 300 a
+// minute ("eth"). A 429 carries no Access-Control-Allow-Origin header, so in the browser it
+// only surfaces as the CORS TypeError "Failed to fetch". Retrying that eight times is what
+// empties the bucket for everyone else on the page, so a rate-limited request stops at once,
+// starts its bucket's cooldown, and rejects with RATE_LIMITED; requests on that bucket that
+// begin during the cooldown wait for it to end, then try. The other bucket keeps going: a
+// gen_call 429 does not stop transaction polling or balance reads. The helpers here are pure:
+// `npm run test:site` runs them from node, with no network and no browser
+// (tests/unit/rpc.test.mjs).
 
 export const RPC_URL = "https://studio.genlayer.com/api";
 
@@ -41,12 +44,21 @@ export class RpcError extends Error {
 export const RATE_LIMITED = "studio is rate-limiting this browser";
 /** Studio's JSON-RPC code for "Rate limit exceeded". */
 export const RATE_LIMIT_CODE = -32029;
-/** The cooldown when the answer did not say how long (a browser never sees the 429 itself). */
+/** The gen_call cooldown when the answer did not say how long (a browser never sees the 429 itself). */
 export const COOLDOWN_MS = 20_000;
+/**
+ * The eth_* cooldown when the answer did not say how long. That bucket is ten times larger,
+ * so what trips it is nearly always one dropped request, and transaction polls must not stall.
+ */
+export const ETH_COOLDOWN_MS = 5_000;
 /** Longest cooldown honoured from retry_after_seconds, so a bad header cannot park the site. */
 const MAX_COOLDOWN_MS = 90_000;
 /** How many reads may sit in their retry loop at once; the rest wait for a slot. */
 export const MAX_RETRYING = 3;
+
+/** Studio's two rate-limit buckets: gen_call + sim_fundAccount, and eth_*. */
+export type Bucket = "gen" | "eth";
+const DEFAULT_COOLDOWN_MS: Record<Bucket, number> = { gen: COOLDOWN_MS, eth: ETH_COOLDOWN_MS };
 
 type Shape = { code?: unknown; message?: unknown; data?: unknown; details?: unknown; cause?: unknown; status?: unknown; name?: unknown };
 const shape = (e: unknown): Shape | null => (e && typeof e === "object" ? (e as Shape) : null);
@@ -92,51 +104,77 @@ export function retryAfterMs(e: unknown): number | null {
   return null;
 }
 
-let cooldownUntil = 0;
-let cooldownWait: Promise<void> | null = null;
+/** The contract has no public method by that name: GenVM's runner refuses before running anything. */
+const MISSING_METHOD = /call to private method|__handle_undefined_method__/i;
 
-/** Milliseconds left on the shared cooldown; 0 when none. */
-export const cooldownRemainingMs = (now: number = Date.now()): number => Math.max(0, cooldownUntil - now);
-
-/** Starts (or extends) the shared cooldown. Returns when it ends. */
-export function startCooldown(ms: number = COOLDOWN_MS, now: number = Date.now()): number {
-  const until = now + Math.max(0, ms);
-  if (until > cooldownUntil) cooldownUntil = until;
-  return cooldownUntil;
+/**
+ * True when a gen_call failed because the register has no such view (one deployed before the
+ * view existed). That is an answer, not flakiness: retrying it only spends the 30/min bucket.
+ * Studio puts the runner's traceback in the error's data.receipt.genvm_result.stderr.
+ */
+export function isMissingMethodError(e: unknown): boolean {
+  for (const s of chain(e)) {
+    for (const text of [s.message, s.details]) {
+      if (typeof text === "string" && MISSING_METHOD.test(text)) return true;
+    }
+    const d = shape(s.data) as { receipt?: { genvm_result?: { stderr?: unknown } } } | null;
+    const stderr = d?.receipt?.genvm_result?.stderr;
+    if (typeof stderr === "string" && MISSING_METHOD.test(stderr)) return true;
+  }
+  return false;
 }
 
-/** Test hook: forget the cooldown. */
-export function clearCooldown(): void {
-  cooldownUntil = 0;
-  cooldownWait = null;
+const cooldownUntil: Record<Bucket, number> = { gen: 0, eth: 0 };
+const cooldownWait: Record<Bucket, Promise<void> | null> = { gen: null, eth: null };
+
+/** Milliseconds left on a bucket's cooldown (the gen_call one by default); 0 when none. */
+export const cooldownRemainingMs = (now: number = Date.now(), bucket: Bucket = "gen"): number =>
+  Math.max(0, cooldownUntil[bucket] - now);
+
+/** Starts (or extends) a bucket's cooldown. Returns when it ends. */
+export function startCooldown(ms?: number, now: number = Date.now(), bucket: Bucket = "gen"): number {
+  const until = now + Math.max(0, ms ?? DEFAULT_COOLDOWN_MS[bucket]);
+  if (until > cooldownUntil[bucket]) cooldownUntil[bucket] = until;
+  return cooldownUntil[bucket];
+}
+
+/** Test hook: forget one bucket's cooldown, or both. */
+export function clearCooldown(bucket?: Bucket): void {
+  for (const b of bucket ? [bucket] : (["gen", "eth"] as const)) {
+    cooldownUntil[b] = 0;
+    cooldownWait[b] = null;
+  }
 }
 
 /**
- * Resolves once the cooldown is over. Every waiter shares one timer; a cooldown extended
- * while they wait keeps them waiting (the timer re-arms) rather than releasing them early.
+ * Resolves once the bucket's cooldown is over. Every waiter shares one timer; a cooldown
+ * extended while they wait keeps them waiting (the timer re-arms) rather than releasing them early.
  */
-export function waitForCooldown(): Promise<void> {
-  if (cooldownRemainingMs() === 0) return Promise.resolve();
-  if (!cooldownWait) {
-    cooldownWait = (async () => {
-      let left = cooldownRemainingMs();
+export function waitForCooldown(bucket: Bucket = "gen"): Promise<void> {
+  if (cooldownRemainingMs(Date.now(), bucket) === 0) return Promise.resolve();
+  let wait = cooldownWait[bucket];
+  if (!wait) {
+    wait = (async () => {
+      let left = cooldownRemainingMs(Date.now(), bucket);
       while (left > 0) {
         await sleep(left);
-        left = cooldownRemainingMs();
+        left = cooldownRemainingMs(Date.now(), bucket);
       }
-      cooldownWait = null;
+      cooldownWait[bucket] = null;
     })();
+    cooldownWait[bucket] = wait;
   }
-  return cooldownWait;
+  return wait;
 }
 
 /**
- * Called with every failed request. A rate-limit failure starts the cooldown (honouring a
- * readable retry_after) and returns true; anything else returns false and leaves it alone.
+ * Called with every failed request. A rate-limit failure starts that bucket's cooldown
+ * (honouring a readable retry_after) and returns true; anything else returns false and
+ * leaves it alone.
  */
-export function noteFailure(e: unknown, now: number = Date.now()): boolean {
+export function noteFailure(e: unknown, now: number = Date.now(), bucket: Bucket = "gen"): boolean {
   if (!isRateLimitError(e)) return false;
-  startCooldown(retryAfterMs(e) ?? COOLDOWN_MS, now);
+  startCooldown(retryAfterMs(e) ?? DEFAULT_COOLDOWN_MS[bucket], now, bucket);
   return true;
 }
 
@@ -211,30 +249,61 @@ async function rateLimitErrorFrom(res: Response): Promise<RpcError> {
   return new RpcError(message, RATE_LIMIT_CODE, data);
 }
 
+export type RetryOptions = {
+  /** attempts in all; RETRY_TRIES (about 40 s) when left out */
+  tries?: number;
+  /** the rate-limit bucket the call spends: "gen" for gen_call and sim_fundAccount (the default), "eth" for eth_* */
+  bucket?: Bucket;
+  /**
+   * true: this call keeps its own retry budget and never queues for one of the MAX_RETRYING
+   * shared slots. For route handlers, where the slots would be shared by every request on a
+   * warm server instance and one slow caller could hold them for everybody.
+   */
+  ownBudget?: boolean;
+  /** errors that are answers rather than flakiness (a view the register lacks): thrown at once */
+  giveUp?: (error: unknown) => boolean;
+  onRetry?: (attempt: number, error: unknown) => void;
+};
+
+/**
+ * A route handler's budget for one read: three tries, its own, so a request never holds the
+ * site's slots. Studio drops a connection now and then, and a buyer pressing "Sign to read the
+ * pack" must not lose their pack to one of them; the deadline below keeps the three tries short.
+ */
+export const ROUTE_RETRY: RetryOptions = { tries: 3, ownBudget: true };
+
+/** How long one read on the server waits before it is given up and tried again on a new connection. */
+export const ROUTE_READ_MS = 8000;
+
 /**
  * Runs `fn` up to `tries` times with the backoff schedule above. Every error is retried:
  * on Studio a read can fail for reasons that have nothing to do with the request.
- * Except rate limiting: that starts the shared cooldown and rejects at once with
+ * Except rate limiting: that starts the bucket's cooldown and rejects at once with
  * RATE_LIMITED, and every attempt that begins during a cooldown first waits for it to end.
+ * `opts` may be a plain number of tries (the older call shape).
  */
 export async function withRetry<T>(
   fn: (attempt: number) => Promise<T>,
-  tries: number = RETRY_TRIES,
+  opts: number | RetryOptions = {},
   onRetry?: (attempt: number, error: unknown) => void,
 ): Promise<T> {
+  const o: RetryOptions = typeof opts === "number" ? { tries: opts, onRetry } : { onRetry, ...opts };
+  const tries = Math.max(1, Math.trunc(o.tries ?? RETRY_TRIES) || 1);
+  const bucket: Bucket = o.bucket ?? "gen";
   let last: unknown;
   let slot = false;
   try {
     for (let i = 0; i < tries; i++) {
-      await waitForCooldown();
+      await waitForCooldown(bucket);
       try {
         return await fn(i);
       } catch (e) {
-        if (noteFailure(e)) throw new Error(RATE_LIMITED);
+        if (noteFailure(e, Date.now(), bucket)) throw new Error(RATE_LIMITED);
+        if (o.giveUp?.(e)) throw e;
         last = e;
         if (i === tries - 1) break;
-        onRetry?.(i, e);
-        if (!slot) {
+        o.onRetry?.(i, e);
+        if (!slot && !o.ownBudget) {
           await acquireRetrySlot();
           slot = true;
         }
@@ -247,9 +316,12 @@ export async function withRetry<T>(
   throw last instanceof Error ? last : new Error(String(last));
 }
 
-/** JSON-RPC call with the retry policy. */
-export const rpcRetry = <T = unknown>(method: string, params: unknown = [], tries?: number) =>
-  withRetry<T>(() => rpc<T>(method, params), tries);
+/** JSON-RPC call with the retry policy (eth_* methods spend the "eth" bucket). */
+export const rpcRetry = <T = unknown>(method: string, params: unknown = [], opts?: number | RetryOptions) => {
+  const o: RetryOptions = typeof opts === "number" ? { tries: opts } : { ...opts };
+  if (!o.bucket && method.startsWith("eth_")) o.bucket = "eth";
+  return withRetry<T>(() => rpc<T>(method, params), o);
+};
 
 // ---- read cache --------------------------------------------------------------
 // Two components asking for the same view share one request, and an answer is reused for
@@ -260,6 +332,12 @@ export type ReadCache<T> = {
   get: (key: string, load: () => Promise<T>) => Promise<T>;
   /** forget everything stored (in-flight requests still complete and are then dropped) */
   clear: () => void;
+  /**
+   * forget one key: the next get() is a live request. A request for it already in flight
+   * still answers its own callers but is not stored, since it may have left before the
+   * chain moved.
+   */
+  forget: (key: string) => void;
   /** test hook: how many keys hold a value right now */
   size: () => number;
 };
@@ -278,8 +356,11 @@ export function createReadCache<T>(ttlMs: number, now: () => number = Date.now):
       const gen = generation;
       const p = load().then(
         (value) => {
-          if (inflight.get(key) === p) inflight.delete(key);
-          if (gen === generation && ttlMs > 0) done.set(key, { value, at: now() });
+          // Stored only while this request is still the one registered for the key: clear()
+          // and forget() unregister it, so an answer that left before the chain moved is dropped.
+          const current = inflight.get(key) === p;
+          if (current) inflight.delete(key);
+          if (current && gen === generation && ttlMs > 0) done.set(key, { value, at: now() });
           return value;
         },
         (e) => {
@@ -294,6 +375,10 @@ export function createReadCache<T>(ttlMs: number, now: () => number = Date.now):
       generation++;
       done.clear();
       inflight.clear();
+    },
+    forget(key) {
+      done.delete(key);
+      inflight.delete(key);
     },
     size: () => done.size,
   };

@@ -71,9 +71,18 @@ export type WalletState = {
   /** sim_fundAccount 10 GEN, resolves when the balance moved */
   getTestGen: () => Promise<void>;
   refreshBalance: () => Promise<void>;
+  /**
+   * Re-reads the balance every 3 s for up to a minute, until it changes. Transfers land a
+   * few seconds after a transaction finalizes, so one read at FINALIZED shows the old number.
+   */
+  watchBalance: () => void;
   /** personal_sign through the connected provider */
   signMessage: (message: string) => Promise<string>;
 };
+
+/** How long watchBalance keeps asking, and how often. Studio lands a transfer within seconds. */
+const WATCH_BALANCE_MS = 60_000;
+const WATCH_BALANCE_EVERY_MS = 3000;
 
 const noop = async () => {};
 const defaultState: WalletState = {
@@ -89,6 +98,7 @@ const defaultState: WalletState = {
   switchToStudio: noop,
   getTestGen: noop,
   refreshBalance: noop,
+  watchBalance: () => {},
   signMessage: async () => "",
 };
 
@@ -116,11 +126,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // re-read a few more times; an empty wallet stays at 0 after that.
   const laterRead = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const zeroChecks = React.useRef(0);
+  // The account being shown right now, readable from a callback that started earlier: every
+  // late answer (a scheduled read, a faucet, a balance watch) is dropped once it no longer
+  // matches, so one account's number or error never lands under another's address.
+  const shown = React.useRef("");
+  const watchRun = React.useRef(0);
+
+  /** Sets the connected account and cancels everything still running for the previous one. */
+  const showAddress = React.useCallback((addr: string) => {
+    shown.current = addr;
+    watchRun.current++;
+    zeroChecks.current = 0;
+    if (laterRead.current) clearTimeout(laterRead.current);
+    laterRead.current = undefined;
+    setAddress(addr);
+  }, []);
 
   const refreshBalanceFor = React.useCallback(async (addr: string) => {
     if (!addr) return;
     try {
-      setBalanceAtto(await chain.balanceOf(addr));
+      const balance = await chain.balanceOf(addr);
+      if (shown.current === addr) setBalanceAtto(balance);
     } catch {
       /* a dropped balance read keeps the last number; the next tx refreshes it */
     }
@@ -142,12 +168,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     active.current?.off();
     active.current = null;
     setSigner(null);
-    setAddress("");
+    showAddress("");
     setChainId(null);
     setBalanceAtto(0n);
-    if (laterRead.current) clearTimeout(laterRead.current);
-    laterRead.current = undefined;
-  }, []);
+  }, [showAddress]);
 
   /** Wires accountsChanged/chainChanged for one provider and returns the unsubscribe. */
   const watch = React.useCallback(
@@ -162,9 +186,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         const next = accounts[0].toLowerCase();
-        setAddress(next);
+        // The new account starts clean: the previous one's error, its scheduled reads and
+        // its zero-balance checks all belonged to an address that is no longer on screen.
+        showAddress(next);
+        setError("");
+        setBalanceAtto(0n);
         setSigner({ provider: p, address: next, rdns: detail.info.rdns });
         void refreshBalanceFor(next);
+        refreshBalanceLater(next);
       };
       const onChain = (...args: unknown[]) => {
         const hex = String(args[0] ?? "");
@@ -178,7 +207,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         p.removeListener?.("chainChanged", onChain);
       };
     },
-    [clearSession, refreshBalanceFor],
+    [clearSession, refreshBalanceFor, refreshBalanceLater, showAddress],
   );
 
   const adopt = React.useCallback(
@@ -186,14 +215,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       active.current?.off();
       active.current = { detail, off: watch(detail) };
       setSigner({ provider: detail.provider, address: addr, rdns: detail.info.rdns });
-      setAddress(addr);
+      showAddress(addr);
       rememberWallet(detail.info.rdns);
       setChainId(await getChainId(detail.provider));
-      zeroChecks.current = 0;
       await refreshBalanceFor(addr);
       refreshBalanceLater(addr);
     },
-    [refreshBalanceFor, refreshBalanceLater, watch],
+    [refreshBalanceFor, refreshBalanceLater, showAddress, watch],
   );
 
   // A connected wallet showing 0 GEN is re-read (up to three times, 4 s apart) before it is believed.
@@ -205,6 +233,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(
     () => () => {
       if (laterRead.current) clearTimeout(laterRead.current);
+      watchRun.current++; // a balance watch still running belongs to a page that is gone
     },
     [],
   );
@@ -326,21 +355,63 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await refreshBalanceFor(address);
   }, [address, refreshBalanceFor]);
 
+  const watchBalance = React.useCallback(() => {
+    const addr = shown.current;
+    if (!addr) return;
+    const run = ++watchRun.current;
+    const mine = () => run === watchRun.current && shown.current === addr;
+    void (async () => {
+      // The balance as it is now is the number to beat: the money moves a few seconds later.
+      let before: bigint | null = null;
+      const read = async () => {
+        try {
+          return await chain.balanceOf(addr);
+        } catch {
+          return null; // a dropped read is not "nothing moved"; the next tick asks again
+        }
+      };
+      before = await read();
+      if (!mine()) return;
+      if (before !== null) setBalanceAtto(before);
+      const until = Date.now() + WATCH_BALANCE_MS;
+      while (Date.now() < until) {
+        await new Promise((r) => setTimeout(r, WATCH_BALANCE_EVERY_MS));
+        if (!mine()) return;
+        const now = await read();
+        if (!mine() || now === null) continue;
+        if (before === null) {
+          before = now;
+          setBalanceAtto(now);
+          continue;
+        }
+        if (now !== before) {
+          setBalanceAtto(now);
+          return;
+        }
+      }
+    })();
+  }, []);
+
   const getTestGen = React.useCallback(async () => {
-    if (!address) {
+    const addr = shown.current;
+    if (!addr) {
       setError("Connect a wallet first.");
       return;
     }
     setError("");
+    const mine = () => shown.current === addr;
     try {
-      setBalanceAtto(await chain.faucet(address));
+      const balance = await chain.faucet(addr, { stillWanted: mine });
       // The chain moved (and the read cache may hold a stale balance-dependent view).
       chain.invalidateReads();
+      if (mine()) setBalanceAtto(balance);
     } catch (e) {
+      // An answer for an account that is no longer on screen is nobody's news.
+      if (!mine()) return;
       setError(errorText(e, chain.FAUCET_REFUSED));
       throw e;
     }
-  }, [address]);
+  }, []);
 
   const signMessage = React.useCallback(
     async (message: string) => {
@@ -376,6 +447,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       switchToStudio,
       getTestGen,
       refreshBalance,
+      watchBalance,
       signMessage,
     }),
     [
@@ -390,6 +462,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       switchToStudio,
       getTestGen,
       refreshBalance,
+      watchBalance,
       signMessage,
     ],
   );

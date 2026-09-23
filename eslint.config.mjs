@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // macOS writes AppleDouble side files on this drive; they are not source.
+    "**/._*",
   ]),
 ]);
 

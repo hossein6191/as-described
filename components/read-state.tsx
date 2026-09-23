@@ -1,12 +1,39 @@
 "use client";
 
 import * as React from "react";
-import { NO_REGISTER, RATE_LIMITED, cooldownRemainingMs } from "@/lib/chain";
+import { NETWORK_ERROR, NO_REGISTER, RATE_LIMITED, cooldownRemainingMs } from "@/lib/chain";
 import { RefreshCw, WifiOff, Camera, Hourglass } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { YourRegisterNotice } from "@/components/register-line";
 import { cn } from "@/lib/utils";
+
+/**
+ * Runs `read` over `items` with at most `limit` in flight and returns every outcome in order.
+ * Studio allows 30 reads a minute from one browser, so a page never sends one read per row in
+ * a single burst, and one failed row never fails the rest.
+ */
+export async function readEach<T, R>(
+  items: readonly T[],
+  read: (item: T) => Promise<R>,
+  limit = 3,
+): Promise<PromiseSettledResult<R>[]> {
+  const out: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        out[i] = { status: "fulfilled", value: await read(items[i]) };
+      } catch (reason) {
+        out[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
+  return out;
+}
 
 /** Shown whenever a read came back from data/snapshot.json instead of Studio. */
 export function SnapshotBanner({ className }: { className?: string }) {
@@ -110,8 +137,13 @@ export function ReadError({
               <p className="font-medium">Could not reach the network.</p>
               <p className="text-muted-foreground">
                 Studio did not answer in time. Nothing is wrong with your order or your wallet.
-                {detail ? <span className="block break-hash font-mono text-[11px] opacity-80">{detail}</span> : null}
+                {/* The default detail is this heading in other words; only a more specific one is worth a line. */}
+                {detail && detail !== NETWORK_ERROR ? (
+                  <span className="block break-hash font-mono text-[11px] opacity-80">{detail}</span>
+                ) : null}
               </p>
+              {/* A register that is not an As Described contract fails every read the same way. */}
+              <YourRegisterNotice className="mt-2" />
             </>
           )}
         </div>

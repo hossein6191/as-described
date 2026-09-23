@@ -1,17 +1,22 @@
-// POST /api/packs/[id]/upload  { sections: string[], address, signature }
-// The seller's pack contents, accepted only when: the signature over uploadMessage(id, manifest)
-// recovers to `address`; the chain says `address` is the listing's seller; and sha256 of every
-// section equals the hash the seller committed on chain, count included. Stored sealed.
-// NEXT_PUBLIC_MOCK=1: the chain check runs against lib/chain-mock and the signature is not
-// required for the mock seller (there is no key for that address); documented in docs/API.md.
+// POST /api/packs/[id]/upload  { sections: string[], address, signature, register }
+// The seller's pack contents, accepted only when, in this order: the register is the site
+// default or runs this contract's code (lib/register-param.ts); the signature over uploadMessage
+// (this site's host, chain 61999, that register, the listing, the manifest of the sent sections'
+// hashes) recovers to `address`; the chain says `address` is the listing's seller; and sha256 of
+// every section equals the hash the seller committed on chain, count included. Nothing is read
+// from the chain before the first two pass, and the chain read is budgeted per caller. Stored
+// sealed, and a register this deployment does not own may keep only so much here (lib/store.ts).
+// NEXT_PUBLIC_MOCK=1 outside a deployment: the chain check runs against lib/chain-mock and the
+// signature is not required for the mock seller (there is no key for that address); documented in
+// docs/API.md.
 
 import { createHash } from "node:crypto";
 import { verifyMessage } from "viem";
-import { manifestOf, uploadMessage } from "@/lib/api";
-import { isMock, readListing, NETWORK_ERROR } from "@/lib/chain";
-import { isListingId, savePack, storageAvailable } from "@/lib/store";
+import { manifestOf, uploadMessageFor } from "@/lib/api";
+import { readListing, NETWORK_ERROR } from "@/lib/chain";
+import { isListingId, savePack, storageAvailable, STORE_LIMIT } from "@/lib/store";
 import { demoSectionsFor } from "@/lib/demo-store";
-import { chainRegister, registerOf } from "@/lib/register-param";
+import { callerOf, chainRegister, checkRegister, mockAllowed, siteOf, takeChainRead, TOO_MANY_READS } from "@/lib/register-param";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,8 +52,35 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return reply(400, { ok: false, reason: `every section must be text of 1 to ${MAX_SECTION_CHARS} characters` });
   }
   const texts = sections as string[];
-  const register = registerOf(body.register);
-  if (!register) return reply(503, { ok: false, reason: "this site is not pointed at a register yet" });
+
+  const checked = await checkRegister(body.register);
+  if (!checked.ok) return reply(checked.status, { ok: false, reason: checked.reason });
+  const register = checked.register;
+
+  // Signature first: the seller signed the manifest of these exact section hashes for this listing
+  // on this site and register. The message is rebuilt here, never taken from the caller.
+  const hashes = texts.map(sha256);
+  const message = uploadMessageFor({ site: siteOf(req), register }, id, await manifestOf(hashes));
+  if (!signature) {
+    if (!mockAllowed) return reply(401, { ok: false, reason: "signature is required" });
+    // mock mode: the mock seller's key is not available; the seller check below stands in
+  } else {
+    let valid = false;
+    try {
+      valid = await verifyMessage({ address: address as `0x${string}`, message, signature: signature as `0x${string}` });
+    } catch {
+      valid = false;
+    }
+    if (!valid) {
+      return reply(401, {
+        ok: false,
+        reason: "the signature does not match the upload message for this listing on this site and register",
+      });
+    }
+  }
+
+  // A signature costs the signer nothing, so the chain read below is also budgeted per caller.
+  if (!takeChainRead(callerOf(req))) return reply(429, { ok: false, reason: TOO_MANY_READS });
 
   // The chain is the authority on who the seller is and what was committed.
   let listing;
@@ -61,30 +93,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!listing) return reply(404, { ok: false, reason: `listing ${id} does not exist` });
   if (listing.seller !== address) return reply(403, { ok: false, reason: "only the listing's seller may upload its pack" });
 
-  const hashes = listing.hashes.map((h) => h.toLowerCase());
-  if (!hashes.every((h) => HEX64.test(h))) return reply(409, { ok: false, reason: "the listing's hashes are malformed" });
-  if (hashes.length !== texts.length) {
-    return reply(409, { ok: false, reason: `the listing commits ${hashes.length} sections, ${texts.length} were sent` });
+  const committed = listing.hashes.map((h) => h.toLowerCase());
+  if (!committed.every((h) => HEX64.test(h))) return reply(409, { ok: false, reason: "the listing's hashes are malformed" });
+  if (committed.length !== texts.length) {
+    return reply(409, { ok: false, reason: `the listing commits ${committed.length} sections, ${texts.length} were sent` });
   }
   for (let i = 0; i < texts.length; i++) {
-    if (sha256(texts[i]) !== hashes[i]) {
+    if (hashes[i] !== committed[i]) {
       return reply(409, { ok: false, reason: `section ${i + 1} does not hash to what the listing committed` });
     }
-  }
-
-  // Signature: the seller signed the manifest of these exact hashes for this listing.
-  const message = uploadMessage(id, await manifestOf(hashes));
-  if (!signature) {
-    if (!isMock) return reply(401, { ok: false, reason: "signature is required" });
-    // mock mode: the mock seller's key is not available; the address check above stands in
-  } else {
-    let valid = false;
-    try {
-      valid = await verifyMessage({ address: address as `0x${string}`, message, signature: signature as `0x${string}` });
-    } catch {
-      valid = false;
-    }
-    if (!valid) return reply(401, { ok: false, reason: "the signature does not match the upload message for this listing" });
   }
 
   // A demo pack's text ships with the site: nothing to store, the pack is already deliverable.
@@ -93,7 +110,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!(await storageAvailable())) {
     return reply(503, {
       ok: false,
-      reason: "This site has no storage for uploaded packs yet, so only the demo packs can be sold here. Site owner: connect a Blob store in Vercel.",
+      reason: "This deployment has no pack store, so only the demo packs can be listed here. A pack of your own needs the local .data/ folder when the site runs from the repository, or a Blob store on your own deployment.",
     });
   }
   try {
@@ -106,7 +123,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       uploadedAt: new Date().toISOString(),
     });
   } catch (e) {
-    const why = e instanceof Error ? e.message.slice(0, 120) : "";
+    const why = e instanceof Error ? e.message.slice(0, 160) : "";
+    // A register this deployment does not own may keep only so much here (lib/store.ts).
+    if (why === STORE_LIMIT) {
+      return reply(503, {
+        ok: false,
+        reason:
+          "This deployment stores a limited number of packs per register, and this register has reached it. Deploy the site from the repository with a store of your own, or sell a demo pack, whose text ships with the site.",
+      });
+    }
     return reply(500, { ok: false, reason: "the pack could not be stored" + (why ? ": " + why : "") });
   }
   return reply(200, { ok: true, listing: id, sections: texts.length, stored: "store" });

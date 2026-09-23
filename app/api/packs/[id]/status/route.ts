@@ -1,29 +1,12 @@
-// GET /api/packs/[id]/status → { ok: true, uploaded: boolean }
-// Whether the seller has uploaded the pack for this listing. No wallet, no chain read: the
-// answer is only "is there a stored body", never its contents or its location.
+// GET /api/packs/[id]/status?register=0x… → { ok: true, uploaded: boolean }
+// Whether the seller has uploaded the pack for this listing on this register. No wallet, no
+// chain read: the answer is only "is there a stored body", never its contents or its location.
+// A demo pack needs no stored body (its text ships with the site); the browser recognises one by
+// its committed hashes (lib/demo-keys.ts), so this route never has to read the listing.
+// A register other than the site default is checked once by its code hash (lib/register-param.ts).
 
 import { hasPack, isListingId } from "@/lib/store";
-import { readListing } from "@/lib/chain";
-import { demoSectionsFor } from "@/lib/demo-store";
-import { chainRegister, registerOf } from "@/lib/register-param";
-
-// A listing whose hashes are a demo pack's is "uploaded" without a stored body; remembered for a minute
-// so the shop grid does not read the chain once per card on every visit.
-const demoMemo = new Map<string, { at: number; uploaded: boolean }>();
-async function demoUploaded(register: string, id: string): Promise<boolean> {
-  const key = register.toLowerCase() + "/" + id;
-  const hit = demoMemo.get(key);
-  if (hit && Date.now() - hit.at < 60_000) return hit.uploaded;
-  let uploaded = false;
-  try {
-    const listing = (await readListing(id, chainRegister(register))).data;
-    uploaded = !!listing && demoSectionsFor(listing.hashes) !== null;
-  } catch {
-    uploaded = false;
-  }
-  demoMemo.set(key, { at: Date.now(), uploaded });
-  return uploaded;
-}
+import { checkRegister } from "@/lib/register-param";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,11 +17,10 @@ const reply = (status: number, body: Record<string, unknown>) =>
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   if (!isListingId(id)) return reply(400, { ok: false, reason: "bad listing id", uploaded: false });
-  const register = registerOf(new URL(req.url).searchParams.get("register"));
-  if (!register) return reply(200, { ok: true, uploaded: false });
+  const checked = await checkRegister(new URL(req.url).searchParams.get("register"));
+  if (!checked.ok) return reply(checked.status, { ok: false, reason: checked.reason, uploaded: false });
   try {
-    const stored = await hasPack(register, id);
-    return reply(200, { ok: true, uploaded: stored || (await demoUploaded(register, id)) });
+    return reply(200, { ok: true, uploaded: await hasPack(checked.register, id) });
   } catch {
     return reply(500, { ok: false, reason: "the store did not answer", uploaded: false });
   }

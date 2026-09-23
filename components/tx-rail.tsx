@@ -23,6 +23,8 @@ export type TxRailProps = {
 };
 
 const POLL_MS = 3000;
+/** Stages a split round did reach: it ran to the reveal, and then no majority formed. */
+const SPLIT_STAGES = 4;
 
 const isFinal = (s: TxStatus) =>
   s.undetermined || s.status === "FINALIZED" || s.status === "CANCELED" || s.status === "UNDETERMINED";
@@ -56,7 +58,7 @@ export function useTxStatus(hash: string | null): TxStatus | null {
   return latest && latest.hash === hash ? latest.status : null;
 }
 
-/** True when the contract's return says money moved (or was refunded) in this call. */
+/** True when the contract's return says money was paid out (or refunded) in this call. */
 function moneyMoves(s: TxStatus): boolean {
   const r = s.result;
   if (!r) return false;
@@ -64,10 +66,28 @@ function moneyMoves(s: TxStatus): boolean {
   const st = typeof r.status === "string" ? r.status : "";
   if (["settled", "released", "refunded", "settled_stale"].includes(st)) return true;
   if (typeof r.verdict === "string" && r.verdict) return true;
-  return "paid_buyer" in r || "paid_seller" in r;
+  return "to_buyer" in r || "to_seller" in r || "paid_buyer" in r || "paid_seller" in r;
+}
+
+/**
+ * True when the wallet's own balance changes because of this call: a payout, or GEN going
+ * into escrow (a buy sends the price, a dispute posts the bond). Both land a few seconds
+ * after finalization, so the header balance is watched rather than read once.
+ */
+function balanceMoves(s: TxStatus): boolean {
+  if (moneyMoves(s)) return true;
+  const r = s.result;
+  return !!r && ("price" in r || "bond" in r);
 }
 
 const stripTag = (m: string) => m.replace(/^\s*\[(EXPECTED|LLM_ERROR|TRANSIENT)\]\s*/i, "").trim();
+
+/** The refusal in the reader's words: the contract's own reason first, then the receipt's text. */
+function refusalText(s: TxStatus): string {
+  const reason = s.result && s.result.ok === false ? s.result.reason : undefined;
+  if (typeof reason === "string" && reason.trim()) return stripTag(reason);
+  return s.message ? stripTag(s.message) : "";
+}
 
 export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProps) {
   const status = useTxStatus(hash);
@@ -77,10 +97,12 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
   // per hash even when the page re-renders with a new closure while the tx is still running.
   const onDoneRef = React.useRef(onDone);
   const refreshRef = React.useRef(wallet.refreshBalance);
+  const watchRef = React.useRef(wallet.watchBalance);
   React.useEffect(() => {
     onDoneRef.current = onDone;
     refreshRef.current = wallet.refreshBalance;
-  }, [onDone, wallet.refreshBalance]);
+    watchRef.current = wallet.watchBalance;
+  }, [onDone, wallet.refreshBalance, wallet.watchBalance]);
 
   React.useEffect(() => {
     if (!status || !isFinal(status)) return;
@@ -89,7 +111,10 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
     // The cached views are stale the moment the chain moved: drop them before the page
     // re-reads in onDone, so the refresh is a live read and not the 30 s cache.
     invalidateReads();
-    void refreshRef.current();
+    // A transfer lands a few seconds after FINALIZED, so one read here would show the old
+    // number: when this call moves GEN, the balance is re-read until it changes.
+    if (balanceMoves(status)) watchRef.current();
+    else void refreshRef.current();
     onDoneRef.current?.(status);
   }, [status, hash]);
 
@@ -123,8 +148,10 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
       </div>
 
       <ol className="flex flex-wrap gap-1.5" aria-label="consensus stages">
-        {STAGES.map((stage, i) => {
-          const reached = final && !canceled ? true : i <= stageIndex;
+        {/* A split round is drawn as what happened: the validators voted, and then no
+            majority, rather than a green "accepted" over a result nothing stored. */}
+        {(split ? STAGES.slice(0, SPLIT_STAGES) : STAGES).map((stage, i) => {
+          const reached = split ? true : final && !canceled ? true : i <= stageIndex;
           const current = !final && i === stageIndex;
           return (
             <li
@@ -145,6 +172,11 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
             </li>
           );
         })}
+        {split && (
+          <li className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-amber-200">
+            no majority
+          </li>
+        )}
       </ol>
 
       {showVotes && (
@@ -177,6 +209,11 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
               ? "Waiting for the validators…"
               : `${votes.agree} agree · ${votes.disagree} disagree · ${votes.idle} idle`}
           </p>
+          {total > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              idle = this validator did not vote in the round; the majority of votes decides.
+            </p>
+          )}
         </div>
       )}
 
@@ -186,7 +223,7 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
           <p className="text-muted-foreground">
             {status.status === "UNKNOWN"
               ? "The network has not listed this transaction yet. It usually appears within a few seconds."
-              : "Validators are working. This takes seconds for a plain call and a minute or two for a judged one."}
+              : "Validators are working. About a minute for a plain call, one to two minutes when the validators judge a section."}
           </p>
         )}
         {canceled && (
@@ -203,9 +240,9 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
         {applied && !split && !refused && (
           <div className="flex flex-col gap-1">
             <p className="text-emerald-200">Finalized. The validators agreed and the result is stored.</p>
-            {moneyMoves(status) && (
+            {balanceMoves(status) && (
               <p className="text-xs text-muted-foreground">
-                The money lands a few seconds after finalization; the balance is checked until it moves.
+                The money lands a few seconds after finalization; your balance is re-read every 3 s until it moves.
               </p>
             )}
           </div>
@@ -213,7 +250,7 @@ export function TxRail({ hash, label, onDone, showVotes, className }: TxRailProp
         {refused && (
           <div className="flex flex-col gap-1">
             <p className="text-amber-200">
-              The contract refused this call{status?.message ? ": " + stripTag(status.message) : "."}
+              The contract refused this call{refusalText(status) ? ": " + refusalText(status) : "."}
             </p>
             {status?.result?.ok === false && (
               <p className="text-xs text-muted-foreground">

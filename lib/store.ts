@@ -1,11 +1,23 @@
 // Where uploaded packs live: Vercel Blob when BLOB_READ_WRITE_TOKEN is set (pathname
-// packs/<id>.json, no random suffix, overwrite allowed), else a local file store under
-// .data/packs/ (dev). Whatever the backend, the body is the envelope from lib/crypto.ts and
-// the blob URL never leaves this module. Server side only.
+// packs/<register>/<listing>.json, no random suffix, overwrite allowed), else a local file store
+// under .data/packs/<register>/<listing>.json. The local store is for development: a deployed
+// site's disk is read-only, so without the token storageBackend() says "none" and the upload
+// route refuses custom packs (the demo packs never need a store). Whatever the backend, the body
+// is the envelope from lib/crypto.ts and the blob URL never leaves this module. Server side only.
+//
+// Two bounds on what a bucket can become:
+//  - Blob objects are written and read with access "private", so nothing is served by URL at all,
+//    and a bucket with no PACK_SECRET is not a bucket this site will write to: storageBackend()
+//    answers "none" instead, because the pack text is what the buyer paid for. The plaintext
+//    envelope is for the local .data/ store only.
+//  - Anyone may deploy a register that passes the delivery API's code check, so a register other
+//    than this site's own may keep at most MAX_GUEST_PACKS packs and MAX_GUEST_BYTES bytes here,
+//    and at most MAX_GUEST_REGISTERS of them may store anything at all.
 
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { openJson, sealJson } from "./crypto";
+import { encryptionOn, openJson, sealJson } from "./crypto";
+import { siteRegister } from "./register";
 
 export type StoredPack = {
   register: string; // lowercase 0x…, the register the listing lives on
@@ -20,12 +32,21 @@ const LOCAL_DIR = path.join(process.cwd(), ".data", "packs");
 
 export const blobOn = (): boolean => !!process.env.BLOB_READ_WRITE_TOKEN;
 
-/** "blob" on Vercel Blob, "local" when the .data/ folder is writable, "none" otherwise (a read-only host with no bucket). */
+/**
+ * "blob" on Vercel Blob, "local" when the .data/ folder is writable, "none" otherwise (a read-only
+ * host with no bucket, or a bucket with no PACK_SECRET).
+ *
+ * A bucket without a secret would hold every paid pack in the clear, one object per listing, and
+ * the two are separate steps in the host's dashboard, so having one without the other is the
+ * expected accident. This site refuses it rather than storing plaintext: the upload route then
+ * answers the same 503 it answers on a host with no store at all, and only the demo packs, whose
+ * text ships with the site, can be listed.
+ */
 let backendMemo: Promise<"blob" | "local" | "none"> | null = null;
 export function storageBackend(): Promise<"blob" | "local" | "none"> {
   if (!backendMemo) {
     backendMemo = (async () => {
-      if (blobOn()) return "blob";
+      if (blobOn()) return encryptionOn() ? "blob" : "none";
       try {
         await mkdir(LOCAL_DIR, { recursive: true });
         await writeFile(path.join(LOCAL_DIR, ".probe"), "ok", "utf8");
@@ -54,7 +75,9 @@ async function writeText(register: string, id: string, text: string): Promise<vo
   if (blobOn()) {
     const { put } = await import("@vercel/blob");
     await put(pathnameOf(register, id), text, {
-      access: "public", // the body is sealed; the URL is never returned to anybody
+      // Private: the object is not served by URL at all, so a leaked store id is worth nothing.
+      // The body is sealed as well (lib/crypto.ts), and the URL never leaves this module.
+      access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
       contentType: "application/json",
@@ -69,7 +92,7 @@ async function writeText(register: string, id: string, text: string): Promise<vo
 async function readText(register: string, id: string): Promise<string | null> {
   if (blobOn()) {
     const { get } = await import("@vercel/blob");
-    const res = await get(pathnameOf(register, id), { access: "public", useCache: false });
+    const res = await get(pathnameOf(register, id), { access: "private", useCache: false });
     if (!res || !res.stream) return null;
     return new Response(res.stream).text();
   }
@@ -100,9 +123,97 @@ async function exists(register: string, id: string): Promise<boolean> {
   }
 }
 
+/** A register other than this site's own may keep at most this many packs, and this many bytes, here. */
+export const MAX_GUEST_PACKS = 25;
+export const MAX_GUEST_BYTES = 2 * 1024 * 1024;
+/** And at most this many such registers may store anything at all in one deployment. */
+export const MAX_GUEST_REGISTERS = 50;
+
+/** What savePack throws when one of those bounds is reached; the upload route answers 503 with it. */
+export const STORE_LIMIT = "this deployment stores a limited number of packs per register, and this register has reached it";
+
+/** The site's own register (and the mock one) are the deployment's own; everything else is a guest. */
+function isGuest(register: string): boolean {
+  const site = siteRegister();
+  if (register === "mock") return false;
+  return !site || register.toLowerCase() !== site.toLowerCase();
+}
+
+/** What a register already keeps here: how many packs, how many bytes, and whether this listing is among them. */
+async function usageOf(register: string, id: string): Promise<{ packs: number; bytes: number; replacing: number }> {
+  if (blobOn()) {
+    const { list } = await import("@vercel/blob");
+    const prefix = `packs/${register.toLowerCase()}/`;
+    const page = await list({ prefix, limit: 1000 });
+    const mine = page.blobs.find((b) => b.pathname === pathnameOf(register, id));
+    return {
+      packs: page.blobs.length,
+      bytes: page.blobs.reduce((n, b) => n + b.size, 0),
+      replacing: mine ? mine.size : 0,
+    };
+  }
+  const dir = path.dirname(localFileOf(register, id));
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return { packs: 0, bytes: 0, replacing: 0 };
+  }
+  let packs = 0;
+  let bytes = 0;
+  let replacing = 0;
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const size = (await stat(path.join(dir, name))).size;
+      packs += 1;
+      bytes += size;
+      if (name === `${id}.json`) replacing = size;
+    } catch {
+      /* a file that vanished between the listing and the stat does not count */
+    }
+  }
+  return { packs, bytes, replacing };
+}
+
+/** How many registers other than this site's own already store something here. */
+async function guestRegisters(): Promise<string[]> {
+  const site = siteRegister().toLowerCase();
+  const keep = (key: string) => !!key && key !== "mock" && key !== site;
+  if (blobOn()) {
+    const { list } = await import("@vercel/blob");
+    const page = await list({ prefix: "packs/", mode: "folded", limit: 1000 });
+    return page.folders.map((f) => f.replace(/^packs\//, "").replace(/\/$/, "").toLowerCase()).filter(keep);
+  }
+  try {
+    return (await readdir(LOCAL_DIR)).map((n) => n.toLowerCase()).filter(keep);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Stores one pack, sealed. Throws STORE_LIMIT when a guest register is past one of the bounds
+ * above: registers are free to deploy and Studio GEN is free, so without this one visitor could
+ * fill the deployment's bucket a listing at a time. Replacing a pack the same register already
+ * stored is never refused, because the listing fixes its hashes, so it can only be the same bytes.
+ */
 export async function savePack(pack: StoredPack): Promise<void> {
   if (!isListingId(pack.listing) || !isRegister(pack.register)) throw new Error("bad listing id or register");
-  await writeText(pack.register, pack.listing, sealJson(pack));
+  if (blobOn() && !encryptionOn()) throw new Error("this deployment has no PACK_SECRET, so it does not store packs");
+  const body = sealJson(pack);
+  if (isGuest(pack.register)) {
+    const used = await usageOf(pack.register, pack.listing);
+    const size = Buffer.byteLength(body, "utf8");
+    const newPack = used.replacing === 0;
+    if (newPack && used.packs >= MAX_GUEST_PACKS) throw new Error(STORE_LIMIT);
+    if (used.bytes - used.replacing + size > MAX_GUEST_BYTES) throw new Error(STORE_LIMIT);
+    if (newPack && used.packs === 0) {
+      const others = await guestRegisters();
+      if (others.length >= MAX_GUEST_REGISTERS) throw new Error(STORE_LIMIT);
+    }
+  }
+  await writeText(pack.register, pack.listing, body);
 }
 
 /** null when nothing was uploaded for this listing on this register. Throws when the stored body cannot be opened. */

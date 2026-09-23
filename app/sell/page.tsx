@@ -39,14 +39,35 @@ const WINDOWS = [
 
 type Step = "form" | "listing" | "upload" | "done";
 
-function StorageNote({ storage, isDemo }: { storage: StorageStatus | null; isDemo: boolean }) {
-  if (isMock || !storage || storage.available || isDemo) return null;
+const noStore = (storage: StorageStatus | null) => !isMock && !!storage && !storage.available;
+
+/** Next to the button that would need the pack store, when this deployment has none. */
+function StorageNote({ storage, isDemo, resume = false }: { storage: StorageStatus | null; isDemo: boolean; resume?: boolean }) {
+  if (!noStore(storage) || isDemo) return null;
   return (
     <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
       <AlertTriangle className="mr-1 inline size-3.5 text-gold" />
-      This site has no storage for uploaded packs yet, so only the demo packs can be sold here. Load one above, or
-      wait for the site owner to connect a storage bucket.
+      {resume
+        ? "This deployment has no pack store, so the text of a pack that is not a demo cannot be uploaded here. If a buyer reports a section missing, you can still put its exact text on chain from the order page."
+        : "This deployment has no pack store, so only demo packs can be listed. Load one under \"Load a demo pack\": its text ships with the site, so buyers can read it the moment it is listed."}
     </p>
+  );
+}
+
+/** At the top of the form, before anyone writes a pack this deployment could not deliver. */
+function NoStoreBanner({ storage }: { storage: StorageStatus | null }) {
+  if (!noStore(storage)) return null;
+  return (
+    <div role="note" className="space-y-1 rounded-xl border border-gold/40 bg-gold/10 p-4 text-sm">
+      <p className="flex items-center gap-2 font-medium">
+        <AlertTriangle className="size-4 shrink-0 text-gold" /> This deployment has no pack store, so only demo packs can be listed.
+      </p>
+      <p className="text-muted-foreground">
+        Load one below: each is real content you can list as it is, and its text ships with the site, so buyers can read it
+        the moment it is listed. A pack you write yourself needs a pack store: the local .data/ folder when you run the site
+        from its repository, or a Vercel Blob store on your own deployment.
+      </p>
+    </div>
   );
 }
 
@@ -213,6 +234,8 @@ export default function SellPage() {
         </p>
       </div>
 
+      <NoStoreBanner storage={storage} />
+
       <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
         <form
           className="min-w-0 space-y-8"
@@ -373,7 +396,7 @@ export default function SellPage() {
                         </Button>
                       </div>
                     </div>
-                    <Textarea id={`section-${i}`} value={s} rows={6} onChange={(e) => setSections((ss) => ss.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Recipe 1 — …" className="min-h-32 font-mono text-xs leading-relaxed" />
+                    <Textarea id={`section-${i}`} value={s} rows={6} onChange={(e) => setSections((ss) => ss.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Recipe 1: …" className="min-h-32 font-mono text-xs leading-relaxed" />
                     <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground" title={hashes[i] || ""}>
                       sha256 {hashes[i] || "—"}
                     </p>
@@ -474,10 +497,25 @@ export default function SellPage() {
                     <Check className="size-4 text-keeps" /> Your pack is live.
                   </p>
                   {isDemo ? <p className="text-xs text-muted-foreground">Demo pack: its text ships with the site, so no upload was needed.</p> : null}
+                  <p className="text-xs font-medium">What happens next</p>
+                  <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                    <li>
+                      Each sale waits in escrow. When its dispute window closes with no dispute, anyone can press Release, you
+                      included, and the price goes to you. My orders flags every sale that is ready.
+                    </li>
+                    <li>
+                      If a buyer reports a section missing, you have 24 hours to put its exact text on chain from the order page, or
+                      the buyer gets the full price back. My orders flags that too, with the deadline.
+                    </li>
+                    <li>A seller cannot buy their own pack: to see a dispute from the buyer&apos;s side, buy it from a second wallet.</li>
+                  </ul>
                   <Button asChild variant="cool" className="w-full">
                     <Link href={`/pack/${listingId}`}>
                       Open {listingId} <ArrowRight />
                     </Link>
+                  </Button>
+                  <Button asChild variant="outline" className="w-full">
+                    <Link href="/orders">Open My orders</Link>
                   </Button>
                 </div>
               ) : null}
@@ -628,7 +666,7 @@ function ResumeUpload({ id, storage }: { id: string; storage: StorageStatus | nu
                   {!isMock && listing && w.address && !mine ? (
                     <p className="text-xs text-breaks">Only the wallet that listed this pack can upload its text.</p>
                   ) : null}
-                  <StorageNote storage={storage} isDemo={isDemo} />
+                  <StorageNote storage={storage} isDemo={isDemo} resume />
                   {done ? (
                     <div className="space-y-2 rounded-lg border border-keeps/40 bg-keeps/10 p-3 text-sm">
                       <p className="flex items-center gap-2 font-medium">
