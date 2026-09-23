@@ -109,7 +109,7 @@
   --background: #0b0e11;
   --foreground: #f2f4f6;
   --surface: #12161b;
-  --card: #12161b;
+  --card: color-mix(in oklab, #12161b 86%, transparent);
   --card-foreground: #f2f4f6;
   --popover: #161b21;
   --popover-foreground: #f2f4f6;
@@ -161,8 +161,13 @@
   html:not(.dark) {
     color-scheme: light;
   }
+  html {
+    @apply bg-background;
+  }
   body {
-    @apply bg-background text-foreground;
+    /* transparent on purpose: the site background canvas is fixed behind the page */
+    @apply text-foreground;
+    background: transparent;
     overflow-x: hidden;
   }
   code,
