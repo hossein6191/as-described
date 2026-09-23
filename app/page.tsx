@@ -7,7 +7,12 @@ import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
 import { StatsStrip } from "@/components/stats-strip";
 import { HeroCtas, TwinPacks } from "@/components/hero-ctas";
 import { StartHere } from "@/components/start-here";
+import { Velaris } from "@/components/ui/velaris";
 import { SITE_NAME, SITE_TAGLINE } from "@/lib/config";
+
+/** GenLayer's own gradient, on the dark plate the brand uses behind it. */
+const GENLAYER_COLORS = ["#110FFF", "#9B6AF6", "#E37DF7", "#0B0E11"];
+const GENLAYER_BG = "#0B0E11";
 
 export const metadata: Metadata = { title: { absolute: `${SITE_NAME}: ${SITE_TAGLINE}` } };
 
@@ -83,16 +88,25 @@ const VALIDATOR_STEPS = [
 export default function HomePage() {
   return (
     <div className="container-site space-y-16 py-10 sm:py-16">
-      <section className="flex flex-col items-center gap-6 text-center">
-        <LogoMark size={72} className="drop-shadow-[0_8px_30px_rgba(25,198,166,0.35)]" />
-        <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">{SITE_TAGLINE}</h1>
-        <p className="max-w-2xl text-base text-muted-foreground text-pretty sm:text-lg">
-          Sell a text pack with promises. Buyers pay into escrow. If a section breaks a promise, validators on GenLayer judge that
-          one section against that one promise, and the money moves by their verdict: nobody can refuse a refund, nobody can fake the
-          evidence.
-        </p>
-        <HeroCtas />
-      </section>
+      <Velaris
+        height="auto"
+        bg={GENLAYER_BG}
+        colors={GENLAYER_COLORS}
+        speed={1.2}
+        grain={0.25}
+        className="rounded-2xl border border-white/10"
+      >
+        <section className="flex flex-col items-center gap-6 bg-black/35 px-4 py-14 text-center sm:px-8 sm:py-20">
+          <LogoMark size={72} className="drop-shadow-[0_8px_30px_rgba(0,0,0,0.55)]" />
+          <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-balance text-white sm:text-5xl">{SITE_TAGLINE}</h1>
+          <p className="max-w-2xl text-base text-pretty text-white/80 sm:text-lg">
+            Sell a text pack with promises. Buyers pay into escrow. If a section breaks a promise, validators on GenLayer judge that
+            one section against that one promise, and the money moves by their verdict: nobody can refuse a refund, nobody can fake the
+            evidence.
+          </p>
+          <HeroCtas />
+        </section>
+      </Velaris>
 
       <section
         aria-labelledby="validators-heading"
