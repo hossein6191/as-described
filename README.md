@@ -147,13 +147,61 @@ A payable call that is refused refunds what it took in the same transaction and 
 
 ## Evidence
 
-The owner's register, its transactions and the validators' tallies are listed here after the
-signing run on the new register. Until then the measured evidence is the run in
-`tests/on_chain.md`: 69 checks and 39 signed calls plus the deploy from `tests/on_chain/smoke.mjs`, plus
-12 browser steps and 14 more signed transactions from `tests/site/e2e.mjs`, all against a
-throwaway register deployed from the exact bytes of `contracts/as_described.py`, with throwaway
-accounts. Nothing the tests touch is the owner's: the smoke run deploys a register of its own,
-and the browser run refuses to start without a `CONTRACT` that is not the one the site ships.
+Signed on 23 and 24 September 2026 from the author's own wallets on GenLayer Studio (chain 61999):
+**A** `0x0A9fd8Fe0b041974e8F794fCf3Eed352c14cf5fe` as the seller and **B**
+`0x449ab0B80539A6358d6a78664221de0A1d96C65A` as the buyer. The calls marked "anyone" or "a third
+key" were sent from a throwaway key the signing page holds, because the contract lets anyone make
+them; that is the point of those rows. Register
+[`0x197478dA434994220368cE3e32179B9409f1509D`](https://explorer-studio.genlayer.com/address/0x197478dA434994220368cE3e32179B9409f1509D).
+`gen_getContractCode` on it returns the bytes of `contracts/as_described.py` (sha256
+`eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803`), which is also the file served
+at `/contracts/as_described.py`, and `genvm-lint` passes on the code read back from the chain.
+
+43 calls in all. Every payout was checked against the balances before and after, and every one moved
+the exact amount the rule names.
+
+| step | wallet | transaction | votes | result |
+|---|---|---|---|---|
+| deploy the register | A | [0xc39cef54…](https://explorer-studio.genlayer.com/tx/0xc39cef54a2eb38ce1053ae4e37605146b19dacf18b4f8942aad6a201b4d815b3) | 3 agree, 2 idle | `0x197478dA434994220368cE3e32179B9409f1509D`; the code read back from the chain is byte-identical to `contracts/as_described.py` |
+| list ten packs, L1 to L10 | A | [0xc2e69558…](https://explorer-studio.genlayer.com/tx/0xc2e6955874c7a9b57fbaf8c4ae7c3173e64c57eea258ad0521b44c1d92e7cf63) | 3 agree, 2 idle | the first of ten `list_pack` calls, all by A: six kinds, prices 0.5 to 2 GEN, windows 5 minutes to 3 days |
+| buy L1, O3 | B | [0x0d4f4da1…](https://explorer-studio.genlayer.com/tx/0x0d4f4da1d27d0a42acc7ad5ad22a5de6e14841fd0ec0a1ea67e3a75c72c23f66) | 5 agree | 1 GEN into escrow |
+| dispute O3: recipe 5 against promise 1 | B | [0x0f64b2cd…](https://explorer-studio.genlayer.com/tx/0x0f64b2cd2080ea7ab37ea41e382fc3b753e9f607d0f084c6da49bced8c27a743) | 3 agree, 2 idle | 0.2 GEN bond, the order is `disputed` |
+| **judge O3** | anyone | [0xba75fc54…](https://explorer-studio.genlayer.com/tx/0xba75fc548913b8b02de5c8badf3da6d35849a1db9995978749ade9c0cea768f7) | 3 agree, 2 idle | **breaks** (BREAK? yes, KEEP? no): 1.2 GEN to the buyer, balance moved by exactly that |
+| judge O3 again | anyone | [0xaae50d14…](https://explorer-studio.genlayer.com/tx/0xaae50d148ae57a6223a3f7bd9fc6afd72928c2cefc85cd4cf2f4186df9e8303b) | 3 agree, 2 idle | refused: the verdict is final |
+| **judge O4**, the honest twin | anyone | [0x2c8172b3…](https://explorer-studio.genlayer.com/tx/0x2c8172b3e01f80793a2dbdd23162d2b6f74bbacb4ea63ccea5d27424a0cb87fc) | 3 agree, 2 idle | **keeps** (no, yes): 1.2 GEN to the seller, the same section and promise as O3 on text that keeps it |
+| judge O5 with other text | anyone | [0x50f3b621…](https://explorer-studio.genlayer.com/tx/0x50f3b621b30235c0c828e841f563d8558ab6205f56a0dbf53bbe7c27b4785688) | 5 agree | refused before any model ran: the text does not match the committed hash |
+| **judge O5**, a promise about the world | anyone | [0x0392bcad…](https://explorer-studio.genlayer.com/tx/0x0392bcad8a12b375573d256415f200862a16ec9a8ba7fada5418b7e8c5a4a8f3) | 3 agree, 1 disagree, 1 idle | **unclear** (unclear, unclear): 1 GEN to the seller, the 0.2 GEN bond back to the buyer. One validator disagreed and the majority decided |
+| report section 1 of O6 missing | B | [0x2c36528b…](https://explorer-studio.genlayer.com/tx/0x2c36528b32b375f72265da808d78cf45a7e4f5aaa39fe4b549fd667fa4db487d) | 3 agree, 2 idle | `missing`, the seller has 24 hours, 2 reports left |
+| reveal the wrong text | A | [0x489f2eb9…](https://explorer-studio.genlayer.com/tx/0x489f2eb97e953ab08db4545eea77fdfb1409f1d1d8099579bf1eb37cdd3009b8) | 3 agree, 2 idle | refused: the text does not match the hash committed for section 1 |
+| reveal section 1 of O6 | A | [0x97a8f7c8…](https://explorer-studio.genlayer.com/tx/0x97a8f7c8ace20ca8f39ac39e58e9ad5399bdd249835ad67748fd582d001b4c4d) | 3 agree, 2 idle | 575 characters on chain; the order is `paid` again and the section is readable with no wallet |
+| report that section again | B | [0x496aa54c…](https://explorer-studio.genlayer.com/tx/0x496aa54c8b41f33b3bf59411109d8c9d88115bc6c41a43c3a1a59a8f63c13884) | 5 agree | refused: section 1 is already on chain, so the deadline cannot be pushed out twice for it |
+| release O7 before the window closed | anyone | [0x20437937…](https://explorer-studio.genlayer.com/tx/0x204379379d5b99c1747906dbfb112d4daa6d63394ea8472015513fdaa6f077c8) | 3 agree, 2 idle | refused: the window is open until the stated time |
+| release O7 after it closed | anyone | [0xd0a60b0e…](https://explorer-studio.genlayer.com/tx/0xd0a60b0e003f536fc372f9eabf49561342112b6d8e0222bbbbfb7e2a83c919a6) | 3 agree, 2 idle | 0.5 GEN to the seller, no dispute and no model |
+| settle O1 by rule, too early | anyone | [0x8ad43ee8…](https://explorer-studio.genlayer.com/tx/0x8ad43ee8a80963e17ec3896e6f1e1fcd6c118aedcbc209b80b09bd8a2030313c) | 3 agree, 2 idle | refused: a dispute may be settled by rule 24 hours after it was opened |
+| **settle O1 by rule**, a day later | anyone | [0xaa95a628…](https://explorer-studio.genlayer.com/tx/0xaa95a6285b39d6e75537690f9d3ce6d643bf8628c218fd7058b41fcd4aeb2e20) | 3 agree, 2 idle | nobody asked for a verdict in 24 hours: 1 GEN to the seller, the 0.2 GEN bond back to the buyer |
+| refund O2, too early | anyone | [0xa7c864a7…](https://explorer-studio.genlayer.com/tx/0xa7c864a70ddb6c82750441c84d42e36b47266c06bef7c4b5fd73e69da185c607) | 3 agree, 2 idle | refused: the seller has 24 hours from the report |
+| **refund O2**, a day later | anyone | [0xb07d2b47…](https://explorer-studio.genlayer.com/tx/0xb07d2b47c825b73a483a7721cf50a932827e8152b87e9e498084bcf26bea7f0f) | 5 agree | the section was never revealed: the whole 0.5 GEN back to the buyer, no model asked |
+| a stranger disputes O6 | a third key | [0x78b90591…](https://explorer-studio.genlayer.com/tx/0x78b9059184060348e13f52738184e99fbb0e708993de2cfc10a118794b6b37df) | 3 agree, 2 idle | refused and refunded in the same transaction: only the buyer may dispute |
+| buy L1 with the wrong amount | a third key | [0x728e637a…](https://explorer-studio.genlayer.com/tx/0x728e637a240db0a6fbcc85fcc231831a8d18b3e45a6d888b56bc79fb62c7138d) | 3 agree, 2 idle | refused and refunded: send exactly the price |
+| the seller buys their own pack | A | [0x9db68bae…](https://explorer-studio.genlayer.com/tx/0x9db68baebd35736b21a6d968deb331187eae2441854f6f5cec45a67e2c28254f) | 5 agree | refused and refunded |
+| close L4, then buy it | A, then a third key | [0x1e950d11…](https://explorer-studio.genlayer.com/tx/0x1e950d11e9f0ca65ee24674a0691ee6ed5712757300d74b6e30c085bb6f9a4af) | 5 agree | refused and refunded: the listing is closed (`close_listing` [0x1d8a630c…](https://explorer-studio.genlayer.com/tx/0x1d8a630c26d7f67ebc3f2b87c791291bc2a606d4e44f552b43fa0e66837099a8)) |
+
+Read back from the register afterwards: `stats()` is 10 listings, 7 orders, 1 kept, 1 broken,
+1 unclear, 1 refunded, 1 released, 1 stale. Every finished order carries the sentence the contract
+wrote, for example O5's: "The validators did not reach a clear answer on whether section 5 breaks
+promise 1, so the seller got the price (1 GEN) and the buyer got the bond back (0.2 GEN)." The same
+ten packs and seven orders are in `data/snapshot.json`, the labelled fallback the site shows when
+Studio answers nothing (`node tools/snapshot.mjs` retakes it).
+
+Three verdicts came from the same pair of questions on the same section number: **breaks** on a pack
+whose recipe 5 fries bacon under "every recipe is vegetarian", **keeps** on its honest twin, and
+**unclear** on a pack that promises every recipe "was tested three times before publishing", which no
+section can settle either way. Nothing the model wrote is stored: the contract keeps the word and
+writes the sentence.
+
+The tests that ran before any of this are in `tests/on_chain.md`: 69 checks over 39 signed calls
+against a throwaway register with the same bytes, and 12 browser steps with 14 more transactions from
+`tests/site/e2e.mjs`. Nothing there touches the register above.
 
 ## Limits, stated plainly
 
