@@ -147,10 +147,9 @@ A payable call that is refused refunds what it took in the same transaction and 
 
 ## Evidence
 
-Signed on 23 and 24 September 2026 from the author's own wallets on GenLayer Studio (chain 61999):
-**A** `0x0A9fd8Fe0b041974e8F794fCf3Eed352c14cf5fe` as the seller and **B**
-`0x449ab0B80539A6358d6a78664221de0A1d96C65A` as the buyer. The calls marked "anyone" or "a third
-key" were sent from a throwaway key the signing page holds, because the contract lets anyone make
+Signed on 23 and 24 September 2026 on GenLayer Studio (chain 61999) by two accounts, **A** the
+seller and **B** the buyer; each transaction below names them on the explorer. The calls marked
+"anyone" or "a third key" were sent from a throwaway key, because the contract lets anyone make
 them; that is the point of those rows. Register
 [`0x197478dA434994220368cE3e32179B9409f1509D`](https://explorer-studio.genlayer.com/address/0x197478dA434994220368cE3e32179B9409f1509D).
 `gen_getContractCode` on it returns the bytes of `contracts/as_described.py` (sha256
@@ -231,6 +230,6 @@ against a throwaway register with the same bytes, and 12 browser steps with 14 m
 - Studio is a test network. Transfers land a few seconds after finalization, and the site says
   so instead of showing a balance that has not moved yet.
 
-## Author
+## Licence
 
-Made by Hellish, <https://x.com/Hellishnum1>. MIT licensed; see `LICENSE`.
+MIT; see `LICENSE`.

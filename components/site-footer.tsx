@@ -3,7 +3,7 @@ import { ExternalLink } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
 import { RegisterLine } from "@/components/register-line";
-import { AUTHOR, REPO_URL, SITE_TAGLINE } from "@/lib/config";
+import { REPO_URL, SITE_TAGLINE } from "@/lib/config";
 
 export function SiteFooter() {
   return (
@@ -57,12 +57,6 @@ export function SiteFooter() {
               </a>
             </li>
           </ul>
-          <p className="pt-2 text-xs text-muted-foreground">
-            made by{" "}
-            <a href={AUTHOR.x} target="_blank" rel="noopener noreferrer" className="text-foreground underline-offset-4 hover:underline">
-              {AUTHOR.name}
-            </a>
-          </p>
         </div>
       </div>
     </footer>
