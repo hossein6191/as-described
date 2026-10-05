@@ -3,7 +3,10 @@
 Authority (who may write), every validation, the refunds on refused payable
 calls, the journeys (paid → settled by each verdict; paid → released;
 paid → missing → revealed → paid, once per section; missing → refunded;
-disputed → settled by rule; an oversize section settled by rule), the prompt
+disputed → settled by rule; an oversize section settled by rule), the
+seller's stake (the slice, the capacity, the slash, the self-close, close and
+withdraw, the seller's public record, and the conservation of every atto the
+contract holds, over seeded random journeys), the prompt
 boundary and its tagged delimiters, the closed set and its combine table,
 the consensus closures themselves (run against a scripted model), the
 calendar, the dedupe, the contract's own sentences and the view shapes, all
@@ -16,6 +19,7 @@ import types
 import pathlib
 import json
 import hashlib
+import random
 import re
 import unicodedata
 
@@ -82,6 +86,8 @@ T0 = "2026-09-18T10:00:00Z"
 GEN = 10 ** 18
 PRICE = 1 * GEN
 BOND = PRICE * 20 // 100
+SLICE = PRICE * 50 // 100
+STAKE = 100 * SLICE          # the default stake: a hundred open orders at a time, so only the stake tests run out
 WINDOW = 3 * 86400
 TRANSFERS = []
 
@@ -119,13 +125,16 @@ def _contract():
     c.listings_by_id = {}; c.listing_id_list = []
     c.orders = {}; c.order_id_list = []
     c.orders_by_listing = {}; c.orders_by_buyer = {}; c.reveals = {}; c.judged_digests = {}
+    c.sellers = {}; c.listings_by_seller = {}
     c.__init__()
     TRANSFERS.clear()
     return c
 
 
-def _listed(c, title="Weeknight Vegetarian", kind="recipes", promises=PROMISES, hashes=HASHES, price=PRICE, window=WINDOW, at=T0):
-    _as(SELLER, at=at)
+def _listed(c, title="Weeknight Vegetarian", kind="recipes", promises=PROMISES, hashes=HASHES, price=PRICE, window=WINDOW,
+            at=T0, stake=None, seller=SELLER):
+    stake = 100 * sp._slice_for_price(price) if stake is None else stake
+    _as(seller, stake, at=at)
     out = json.loads(c.list_pack(title, kind, json.dumps(promises), json.dumps(hashes), str(price), str(window)))
     assert out["ok"], out
     return out["listing"]
@@ -337,15 +346,18 @@ class TestClock:
 # ---------------------------------------------------------------- listing
 
 class TestListing:
-    def _refused(self, c, **kw):
-        _as(SELLER)
+    def _refused(self, c, stake=STAKE, **kw):
+        """list_pack takes the stake, so a refusal is a refund and a reason, never a raise."""
+        TRANSFERS.clear()
+        _as(SELLER, stake)
         args = dict(title="Weeknight Vegetarian", kind="recipes", promises=json.dumps(PROMISES), hashes=json.dumps(HASHES), price=str(PRICE), window=str(WINDOW))
         args.update(kw)
-        with pytest.raises(sp.gl.vm.UserError) as e:
-            c.list_pack(args["title"], args["kind"], args["promises"], args["hashes"], args["price"], args["window"])
-        assert str(e.value).startswith(sp.ERROR_EXPECTED)
-        assert c.listing_count == 0 and c.listing_id_list == []
-        return str(e.value)
+        out = json.loads(c.list_pack(args["title"], args["kind"], args["promises"], args["hashes"], args["price"], args["window"]))
+        assert out["ok"] is False and out["reason"].endswith("; your funds were returned") and out["returned"] == str(stake), out
+        assert TRANSFERS == ([(SELLER, stake)] if stake else []), TRANSFERS
+        assert c.listing_count == 0 and c.listing_id_list == [] and c.sellers == {} and c.listings_by_seller == {}
+        assert c.seller_count == 0 and c.stake_held_total == 0
+        return out["reason"]
 
     def test_every_field_is_validated_and_nothing_is_stored(self):
         c = _contract()
@@ -371,6 +383,17 @@ class TestListing:
         assert "window" in self._refused(c, window="299")
         assert "window" in self._refused(c, window=str(30 * 86400 + 1))
         assert "window" in self._refused(c, window="soon")
+        assert "stake" in self._refused(c, stake=SLICE - 1) and str(SLICE) + " atto" in self._refused(c, stake=SLICE - 1)
+        assert "stake" in self._refused(c, stake=0)
+        assert "title" in self._refused(c, stake=0, title="ab")         # nothing sent, nothing to send back
+        # calldata is not type-checked: a non-string is refused and refunded, never raised on after the stake was taken
+        assert "title" in self._refused(c, title=12345) and "title" in self._refused(c, title=["Weeknight Vegetarian"])
+        assert "kind" in self._refused(c, kind=["recipes"])
+        # a fraction, an exponent or NaN makes the whole input unreadable before a float is built (on chain a float traps)
+        assert "JSON list" in self._refused(c, promises='["Every recipe is vegetarian.", 1.5]')
+        assert "JSON list" in self._refused(c, promises='["Every recipe is vegetarian.", NaN]')
+        assert "JSON list" in self._refused(c, hashes="[1e3]")
+        assert "JSON list" in self._refused(c, hashes='["' + HASHES[0] + '", Infinity]')
 
     def test_ids_are_sequential_and_the_row_is_normalised(self):
         c = _contract()
@@ -387,9 +410,10 @@ class TestListing:
         c = _contract(); _listed(c)
         _as(STRANGER)
         with pytest.raises(sp.gl.vm.UserError) as e: c.close_listing("L1")
-        assert "only the seller" in str(e.value)
+        assert "only the seller" in str(e.value) and TRANSFERS == []
         _as(SELLER)
         assert json.loads(c.close_listing("L1"))["open"] is False
+        TRANSFERS.clear()
         with pytest.raises(sp.gl.vm.UserError) as e: c.close_listing("L1")
         assert "already closed" in str(e.value)
         _as(BUYER, PRICE)
@@ -408,13 +432,14 @@ class TestBuy:
             (BUYER, PRICE // 2, "L1", T0, "exactly the price"),
             (BUYER, PRICE * 2, "L1", T0, "exactly the price"),
             (BUYER, PRICE, "L1", "", "clock"),
+            (BUYER, PRICE, ["L1"], T0, "no listing"),             # calldata is not type-checked
         ]
         for sender, value, listing, at, words in cases:
             TRANSFERS.clear()
             _as(sender, value, at=at)
             out = json.loads(c.buy(listing))
             assert out["ok"] is False and words in out["reason"] and "returned" in out["reason"], out
-            assert TRANSFERS == [(sender, value)], (words, TRANSFERS)
+            assert out["returned"] == str(value) and TRANSFERS == [(sender, value)], (words, TRANSFERS)
         assert c.order_count == 0 and c.order_id_list == []
         TRANSFERS.clear()
         _as(BUYER, 0)
@@ -452,6 +477,7 @@ class TestDispute:
             (BUYER, BOND, "O1", "4", "3", T0, "promise index"),
             (BUYER, BOND - 1, "O1", "4", "0", T0, "bond of exactly"),
             (BUYER, BOND + 1, "O1", "4", "0", T0, "bond of exactly"),
+            (BUYER, BOND, ["O1"], "4", "0", T0, "no order"),       # calldata is not type-checked
         ]
         for sender, value, order, s, p, at, words in cases:
             TRANSFERS.clear()
@@ -541,9 +567,9 @@ class TestWithdrawDispute:
         _as(STRANGER, at=_at(300 + 24 * 3600))
         out = json.loads(c.refund_missing("O1"))
         assert out["ok"] and out["status"] == "refunded"
-        assert TRANSFERS == [(BUYER, BOND), (BUYER, PRICE)]          # bond back, then the whole price
+        assert TRANSFERS == [(BUYER, BOND), (BUYER, PRICE + SLICE)]  # bond back, then the whole price and a slice of the stake
         assert json.loads(c.order("O1"))["verdict_line"] == (
-            "Section 5 was reported missing and not revealed within 24 hours, so the buyer got the full price back: 1 GEN.")
+            "Section 5 was reported missing and not revealed within 24 hours, so the buyer got the full price back plus one slice of the seller's stake: 1.5 GEN.")
 
     def test_a_withdrawn_dispute_can_be_opened_again_on_another_section(self):
         c = _contract(); _listed(c); _bought(c); _disputed(c, section=4, promise=0, at=_at(60))
@@ -555,7 +581,7 @@ class TestWithdrawDispute:
         assert o.status == "disputed" and int(o.bond) == BOND and o.disputed_at == _at(180)
         _ask_returning(c, "breaks", "yes", "no")
         _as(STRANGER, at=_at(240)); c.judge("O1", SECTIONS[1])
-        assert TRANSFERS == [(BUYER, PRICE + BOND)]
+        assert TRANSFERS == [(BUYER, PRICE + BOND + SLICE)]
 
 
 # ------------------------------------------------------------------- judge
@@ -596,10 +622,10 @@ class TestJudge:
 
     def test_breaks_pays_the_buyer_price_and_bond(self):
         c, out = self._judged("breaks")
-        assert out["ok"] and out["verdict"] == "breaks" and out["to_buyer"] == str(PRICE + BOND) and out["to_seller"] == "0"
-        assert TRANSFERS == [(BUYER, PRICE + BOND)]
+        assert out["ok"] and out["verdict"] == "breaks" and out["to_buyer"] == str(PRICE + BOND + SLICE) and out["to_seller"] == "0"
+        assert TRANSFERS == [(BUYER, PRICE + BOND + SLICE)]          # one transfer: the slice rides with the refund
         o = c.orders["O1"]
-        assert o.status == "settled" and o.verdict == "breaks" and o.paid_buyer == PRICE + BOND and o.paid_seller == 0
+        assert o.status == "settled" and o.verdict == "breaks" and o.paid_buyer == PRICE + BOND + SLICE and o.paid_from_stake == SLICE and o.paid_seller == 0
         assert o.bond == 0 and o.settled_by == STRANGER and o.judged_at == _at(3600) and o.judgments == 1
         assert o.revealed_text == SECTIONS[4]
         assert json.loads(c.listing("L1"))["broken"] == 1 and json.loads(c.stats())["broken"] == 1
@@ -672,13 +698,13 @@ class TestJudge:
         assert "does not match the hash" in str(e.value) and TRANSFERS == []
         out = json.loads(c.judge("O1", long_text))
         assert out["ok"] and out["verdict"] == "breaks" and out["by_rule"] is True
-        assert out["to_buyer"] == str(PRICE + BOND) and out["to_seller"] == "0" and TRANSFERS == [(BUYER, PRICE + BOND)]
+        assert out["to_buyer"] == str(PRICE + BOND + SLICE) and out["to_seller"] == "0" and TRANSFERS == [(BUYER, PRICE + BOND + SLICE)]
         assert out["break_answer"] == "" and out["keep_answer"] == ""
         o = c.orders["O1"]
         assert o.status == "settled" and o.verdict == "breaks" and o.revealed_text == long_text and o.judgments == 1
         assert o.verdict_line == out["verdict_line"] == (
             "Section 6 is longer than the 4000 characters a section may have, so the dispute was settled as breaks "
-            "by rule, without asking the validators: the buyer got the price and the bond back, 1.2 GEN.")
+            "by rule, without asking the validators: the buyer got the price, the bond and one slice of the seller's stake (0.5 GEN) back, 1.7 GEN.")
         assert json.loads(c.listing("L1"))["broken"] == 1 and json.loads(c.stats())["broken"] == 1
         with pytest.raises(sp.gl.vm.UserError) as e: c.judge("O1", long_text)
         assert "already judged" in str(e.value)
@@ -794,7 +820,7 @@ class TestMissing:
         _ask_returning(c, "breaks")
         _as(STRANGER, at=_at(WINDOW + 3601))
         assert json.loads(c.judge("O1", SECTIONS[4]))["verdict"] == "breaks"
-        assert TRANSFERS == [(BUYER, PRICE + BOND)]
+        assert TRANSFERS == [(BUYER, PRICE + BOND + SLICE)]
 
     def test_refund_missing_waits_24_hours_then_pays_the_buyer_with_no_model(self):
         c = _contract(); _listed(c); _bought(c)
@@ -810,9 +836,9 @@ class TestMissing:
         with pytest.raises(sp.gl.vm.UserError): c.refund_missing("O1")
         _as(STRANGER, at=_at(100 + 24 * 3600))
         out = json.loads(c.refund_missing("O1"))
-        assert out["ok"] and out["status"] == "refunded" and out["to_buyer"] == str(PRICE) and TRANSFERS == [(BUYER, PRICE)]
+        assert out["ok"] and out["status"] == "refunded" and out["to_buyer"] == str(PRICE + SLICE) and TRANSFERS == [(BUYER, PRICE + SLICE)]
         o = c.orders["O1"]
-        assert o.status == "refunded" and o.paid_buyer == PRICE and o.settled_by == STRANGER
+        assert o.status == "refunded" and o.paid_buyer == PRICE + SLICE and o.paid_from_stake == SLICE and o.settled_by == STRANGER
         assert json.loads(c.stats())["refunded"] == 1
         with pytest.raises(sp.gl.vm.UserError): c.refund_missing("O1")
         _as(SELLER, at=_at(100 + 24 * 3600 + 1))
@@ -875,7 +901,7 @@ class TestMissing:
         c = _contract(); _listed(c); _bought(c)
         _as(BUYER, at=_at(60)); c.report_missing("O1", "0")
         _as(STRANGER, at=_at(60 + 24 * 3600))
-        assert json.loads(c.refund_missing("O1"))["ok"] and TRANSFERS == [(BUYER, PRICE)]
+        assert json.loads(c.refund_missing("O1"))["ok"] and TRANSFERS == [(BUYER, PRICE + SLICE)]
         assert int(c.orders["O1"].missing_reports) == 1
 
     def test_a_new_report_that_is_never_revealed_still_refunds_the_buyer(self):
@@ -885,11 +911,11 @@ class TestMissing:
         _as(BUYER, at=_at(180)); c.report_missing("O1", "1")
         _as(STRANGER, at=_at(180 + 24 * 3600))
         out = json.loads(c.refund_missing("O1"))
-        assert out["ok"] and out["status"] == "refunded" and TRANSFERS == [(BUYER, PRICE)]
+        assert out["ok"] and out["status"] == "refunded" and TRANSFERS == [(BUYER, PRICE + SLICE)]
         row = json.loads(c.order("O1"))
         assert row["revealed"] == [{"index": 0, "text": SECTIONS[0]}] and row["revealed_text"] == SECTIONS[0]
         assert row["verdict_line"] == out["verdict_line"] == (
-            "Section 2 was reported missing and not revealed within 24 hours, so the buyer got the full price back: 1 GEN.")
+            "Section 2 was reported missing and not revealed within 24 hours, so the buyer got the full price back plus one slice of the seller's stake: 1.5 GEN.")
 
     def test_a_committed_section_over_the_cap_cannot_be_put_on_chain(self):
         long_text = "Recipe 6: " + "a very long method, " * 250       # 5,010 characters, over the published cap
@@ -902,7 +928,7 @@ class TestMissing:
         o = c.orders["O1"]
         assert o.status == "missing" and o.revealed_mask == 0 and o.revealed_text == ""
         _as(STRANGER, at=_at(60 + 24 * 3600))                          # so that section ends in a refund, not a verdict
-        assert json.loads(c.refund_missing("O1"))["ok"] and TRANSFERS == [(BUYER, PRICE)]
+        assert json.loads(c.refund_missing("O1"))["ok"] and TRANSFERS == [(BUYER, PRICE + SLICE)]
 
     def test_the_order_lists_every_revealed_section_by_index_and_only_those(self):
         c = _contract(); _listed(c); _bought(c)
@@ -958,6 +984,357 @@ class TestStale:
         with pytest.raises(sp.gl.vm.UserError) as e: c.settle_stale("O1")
         assert "it is not stale" in str(e.value)
         assert TRANSFERS == [(SELLER, PRICE + BOND)]    # the money moved once, on the verdict, and not again
+
+
+# ------------------------------------------------------------------- stake
+
+SELLER2, BUYER2, BUYER3 = "0xSELLER2", "0xBUYER2", "0xBUYER3"
+OPEN = ("paid", "disputed", "missing")
+
+
+def _released(c, order, at=None):
+    _as(STRANGER, at=at or _at(WINDOW)); out = json.loads(c.release(order))
+    assert out["ok"], out
+    TRANSFERS.clear()
+
+
+class TestStake:
+    """The seller's side of the risk: a stake in slices, one per open order, one paid out per broken promise."""
+
+    def test_a_listing_takes_a_stake_and_says_how_many_orders_it_backs(self):
+        c = _contract()
+        _as(SELLER, 3 * SLICE + 7)
+        out = json.loads(c.list_pack("Weeknight Vegetarian", "recipes", json.dumps(PROMISES), json.dumps(HASHES), str(PRICE), str(WINDOW)))
+        assert out == {"ok": True, "listing": "L1", "sections": 5, "promises": 3, "price": str(PRICE), "window_seconds": WINDOW,
+                       "stake": str(3 * SLICE + 7), "slice": str(SLICE), "capacity": 3}
+        assert TRANSFERS == []                                             # the stake stays in the contract
+        row = json.loads(c.listing("L1"))
+        assert (row["stake"], row["slice"], row["open_orders"], row["capacity"], row["free"]) == (str(3 * SLICE + 7), str(SLICE), 0, 3, 3)
+        assert row["stake_paid"] == "0" and row["closed_reason"] == "" and row["open"] is True
+        assert sp._slice_for_price(PRICE) == SLICE == PRICE // 2 and sp._slice_for_price(sp.MIN_PRICE) == sp.MIN_PRICE // 2
+        stats = json.loads(c.stats())
+        assert stats["stake_held"] == str(3 * SLICE + 7) and stats["stake_paid"] == "0" and stats["sellers"] == 1
+        _as(SELLER, SLICE)                                                 # exactly one slice is enough
+        assert json.loads(c.list_pack("One Slice Pack", "notes", json.dumps(PROMISES), json.dumps(HASHES), str(PRICE), str(WINDOW)))["capacity"] == 1
+
+    def test_the_stake_backs_a_bounded_number_of_open_orders(self):
+        c = _contract(); _listed(c, stake=2 * SLICE)
+        _bought(c); _bought(c, buyer=BUYER2)
+        row = json.loads(c.listing("L1"))
+        assert row["open_orders"] == 2 and row["free"] == 0
+        _as(BUYER3, PRICE)
+        out = json.loads(c.buy("L1"))
+        assert out["ok"] is False and out["returned"] == str(PRICE) and TRANSFERS == [(BUYER3, PRICE)]
+        assert out["reason"] == ("this listing's stake backs 2 open orders at a time and all 2 are taken; "
+                                 "try again when one ends; your funds were returned")
+        assert c.order_count == 2 and json.loads(c.seller(SELLER))["sold"] == 2
+        TRANSFERS.clear()
+        _released(c, "O1")                                                 # an order that ends frees its slice
+        row = json.loads(c.listing("L1"))
+        assert row["open_orders"] == 1 and row["free"] == 1 and row["stake"] == str(2 * SLICE)
+        assert _bought(c, buyer=BUYER3) == "O3"
+
+    def test_a_disputed_or_missing_order_still_holds_its_slice(self):
+        c = _contract(); _listed(c, stake=2 * SLICE)
+        _bought(c); _bought(c, buyer=BUYER2)
+        _disputed(c, "O1")
+        _as(BUYER2); c.report_missing("O2", "1")
+        assert json.loads(c.listing("L1"))["open_orders"] == 2
+        _as(BUYER3, PRICE); assert json.loads(c.buy("L1"))["ok"] is False
+        _ask_returning(c, "keeps", "no", "yes")
+        _as(STRANGER, at=_at(60)); c.judge("O1", SECTIONS[4])
+        assert json.loads(c.listing("L1"))["open_orders"] == 1 and json.loads(c.listing("L1"))["stake"] == str(2 * SLICE)
+        assert _bought(c, buyer=BUYER3) == "O3"
+
+    def test_a_broken_promise_pays_one_slice_and_the_listing_stays_open_while_a_slice_is_left(self):
+        c = _contract(); _listed(c, stake=2 * SLICE); _bought(c); _disputed(c)
+        _ask_returning(c, "breaks", "yes", "no")
+        _as(STRANGER, at=_at(60))
+        out = json.loads(c.judge("O1", SECTIONS[4]))
+        assert out["to_buyer"] == str(PRICE + BOND + SLICE) and out["paid_from_stake"] == str(SLICE)
+        assert TRANSFERS == [(BUYER, PRICE + BOND + SLICE)]
+        row = json.loads(c.listing("L1"))
+        assert row["stake"] == str(SLICE) and row["stake_paid"] == str(SLICE) and row["open_orders"] == 0
+        assert row["open"] is True and row["closed_reason"] == "" and row["capacity"] == 1     # exactly one slice still backs an order
+        assert json.loads(c.order("O1"))["paid_from_stake"] == str(SLICE)
+        rec = json.loads(c.seller(SELLER))
+        assert rec["broken"] == 1 and rec["staked"] == str(SLICE) and rec["stake_paid"] == str(SLICE)
+        stats = json.loads(c.stats())
+        assert stats["stake_held"] == str(SLICE) and stats["stake_paid"] == str(SLICE)
+        assert _bought(c, buyer=BUYER2) == "O2"
+
+    def test_a_listing_left_short_of_a_slice_closes_itself(self):
+        c = _contract(); _listed(c, stake=SLICE + 1); _bought(c); _disputed(c)
+        _ask_returning(c, "breaks", "yes", "no")
+        _as(STRANGER, at=_at(60)); c.judge("O1", SECTIONS[4])
+        assert TRANSFERS == [(BUYER, PRICE + BOND + SLICE)]
+        row = json.loads(c.listing("L1"))
+        assert row["open"] is False and row["closed_reason"] == "out_of_stake" and row["stake"] == "1" and row["capacity"] == 0
+        TRANSFERS.clear()
+        _as(BUYER2, PRICE)
+        out = json.loads(c.buy("L1"))
+        assert out["ok"] is False and "closed" in out["reason"] and TRANSFERS == [(BUYER2, PRICE)]
+        TRANSFERS.clear()
+        _as(SELLER)
+        with pytest.raises(sp.gl.vm.UserError) as e: c.close_listing("L1")
+        assert "already closed" in str(e.value) and TRANSFERS == []
+        out = json.loads(c.withdraw_stake("L1"))                           # what is left still belongs to the seller
+        assert out == {"ok": True, "listing": "L1", "returned": "1"} and TRANSFERS == [(SELLER, 1)]
+        assert json.loads(c.listing("L1"))["closed_reason"] == "out_of_stake"
+        assert json.loads(c.seller(SELLER))["staked"] == "0" and json.loads(c.stats())["stake_held"] == "0"
+
+    def test_a_section_never_revealed_costs_a_slice_too(self):
+        c = _contract(); _listed(c, stake=SLICE); _bought(c)
+        _as(BUYER, at=_at(60)); c.report_missing("O1", "2")
+        _as(STRANGER, at=_at(60 + 24 * 3600))
+        out = json.loads(c.refund_missing("O1"))
+        assert out["to_buyer"] == str(PRICE + SLICE) and out["paid_from_stake"] == str(SLICE) and TRANSFERS == [(BUYER, PRICE + SLICE)]
+        row = json.loads(c.listing("L1"))
+        assert row["stake"] == "0" and row["open"] is False and row["closed_reason"] == "out_of_stake"
+        rec = json.loads(c.seller(SELLER))
+        assert rec["refunded"] == 1 and rec["broken"] == 0 and rec["stake_paid"] == str(SLICE) and rec["staked"] == "0"
+        _as(SELLER)
+        with pytest.raises(sp.gl.vm.UserError) as e: c.withdraw_stake("L1")
+        assert "no stake left" in str(e.value)
+
+    def test_keeps_unclear_stale_and_release_never_touch_the_stake(self):
+        for path in ("keeps", "unclear", "stale", "release"):
+            c = _contract(); _listed(c, stake=SLICE); _bought(c)
+            if path == "release":
+                _as(STRANGER, at=_at(WINDOW)); c.release("O1")
+            elif path == "stale":
+                _disputed(c, at=_at(60)); _as(STRANGER, at=_at(60 + 24 * 3600)); c.settle_stale("O1")
+            else:
+                _disputed(c); _ask_returning(c, path); _as(STRANGER, at=_at(60)); c.judge("O1", SECTIONS[4])
+            row = json.loads(c.listing("L1"))
+            assert row["stake"] == str(SLICE) and row["stake_paid"] == "0" and row["open"] is True, path
+            assert row["open_orders"] == 0 and row["free"] == 1, path
+            assert json.loads(c.order("O1"))["paid_from_stake"] == "0", path
+            assert SLICE not in [v for _, v in TRANSFERS] and all(v != PRICE + BOND + SLICE for _, v in TRANSFERS), path
+            assert json.loads(c.stats())["stake_paid"] == "0" and json.loads(c.seller(SELLER))["staked"] == str(SLICE), path
+            assert c.orders["O1"].verdict_line and "stake" not in c.orders["O1"].verdict_line, path
+
+    def test_a_slash_on_a_listing_the_seller_closed_keeps_the_sellers_reason(self):
+        c = _contract(); _listed(c, stake=SLICE); _bought(c)
+        _as(SELLER)
+        out = json.loads(c.close_listing("L1"))
+        assert out == {"ok": True, "listing": "L1", "open": False, "returned": "0", "open_orders": 1} and TRANSFERS == []
+        _disputed(c); _ask_returning(c, "breaks"); _as(STRANGER, at=_at(60)); c.judge("O1", SECTIONS[4])
+        assert TRANSFERS == [(BUYER, PRICE + BOND + SLICE)]               # a closed listing's stake still pays its open orders
+        row = json.loads(c.listing("L1"))
+        assert row["closed_reason"] == "seller" and row["stake"] == "0" and row["open"] is False
+
+    def test_closing_returns_the_stake_only_when_no_order_is_open(self):
+        c = _contract(); _listed(c, stake=3 * SLICE); _listed(c, stake=2 * SLICE)
+        _as(SELLER)
+        out = json.loads(c.close_listing("L2"))                            # nothing open: the stake comes back in the same call
+        assert out == {"ok": True, "listing": "L2", "open": False, "returned": str(2 * SLICE), "open_orders": 0}
+        assert TRANSFERS == [(SELLER, 2 * SLICE)] and json.loads(c.listing("L2"))["stake"] == "0"
+        assert json.loads(c.seller(SELLER))["staked"] == str(3 * SLICE) and json.loads(c.stats())["stake_held"] == str(3 * SLICE)
+        TRANSFERS.clear()
+        _as(SELLER)
+        with pytest.raises(sp.gl.vm.UserError) as e: c.withdraw_stake("L2")
+        assert "no stake left" in str(e.value) and TRANSFERS == []
+        _bought(c, "L1"); _bought(c, "L1", buyer=BUYER2)
+        _as(SELLER)
+        out = json.loads(c.close_listing("L1"))                            # two orders open: the stake stays behind them
+        assert out["returned"] == "0" and out["open_orders"] == 2 and TRANSFERS == []
+        assert json.loads(c.listing("L1"))["stake"] == str(3 * SLICE) and json.loads(c.listing("L1"))["closed_reason"] == "seller"
+        _released(c, "O1")
+        _as(SELLER)
+        with pytest.raises(sp.gl.vm.UserError) as e: c.withdraw_stake("L1")
+        assert "still backs 1 open order" in str(e.value) and TRANSFERS == []
+        _released(c, "O2")
+        _as(SELLER)
+        out = json.loads(c.withdraw_stake("L1"))
+        assert out == {"ok": True, "listing": "L1", "returned": str(3 * SLICE)} and TRANSFERS == [(SELLER, 3 * SLICE)]
+        TRANSFERS.clear()
+        with pytest.raises(sp.gl.vm.UserError) as e: c.withdraw_stake("L1")
+        assert "no stake left" in str(e.value) and TRANSFERS == []
+        rec = json.loads(c.seller(SELLER))
+        assert rec["staked"] == "0" and rec["released"] == 2 and json.loads(c.stats())["stake_held"] == "0"
+
+    def test_only_the_seller_withdraws_and_only_from_a_closed_listing(self):
+        c = _contract(); _listed(c)
+        for sender in (STRANGER, BUYER):
+            _as(sender)
+            with pytest.raises(sp.gl.vm.UserError) as e: c.withdraw_stake("L1")
+            assert str(e.value).startswith(sp.ERROR_EXPECTED) and "only the seller" in str(e.value)
+        _as(SELLER)
+        with pytest.raises(sp.gl.vm.UserError) as e: c.withdraw_stake("L1")
+        assert "close the listing first" in str(e.value)
+        with pytest.raises(sp.gl.vm.UserError) as e: c.withdraw_stake("L9")
+        assert "no listing named L9" in str(e.value)
+        assert TRANSFERS == [] and json.loads(c.listing("L1"))["stake"] == str(STAKE)
+
+    def test_every_seller_has_a_public_record(self):
+        c = _contract()
+        _listed(c, stake=2 * SLICE, at=T0)
+        _listed(c, title="Cold Email Templates", kind="templates", seller=SELLER2, stake=SLICE, at=_at(10))
+        _listed(c, title="More Weeknight Food", stake=4 * SLICE, at=_at(20))
+        _bought(c, "L1"); _bought(c, "L1", buyer=BUYER2); _bought(c, "L3"); _bought(c, "L2")
+        _disputed(c, "O1"); _ask_returning(c, "breaks"); _as(STRANGER, at=_at(60)); c.judge("O1", SECTIONS[4])
+        _as(BUYER2, BOND); c.open_dispute("O2", "0", "0"); _ask_returning(c, "keeps"); _as(STRANGER, at=_at(60)); c.judge("O2", SECTIONS[0])
+        _as(BUYER, BOND); c.open_dispute("O3", "1", "0"); _ask_returning(c, "unclear"); _as(STRANGER, at=_at(60)); c.judge("O3", SECTIONS[1])
+        _released(c, "O4")
+        rec = json.loads(c.seller(SELLER.upper()))                         # any case reads the same record
+        assert rec == {"seller": SELLER.lower(), "known": True, "listings": ["L1", "L3"], "listed": 2, "sold": 3,
+                       "released": 0, "kept": 1, "broken": 1, "unclear": 1, "refunded": 0, "stale": 0,
+                       "staked": str(5 * SLICE), "stake_paid": str(SLICE), "first_listed": T0}
+        other = json.loads(c.seller(" " + SELLER2 + " "))
+        assert other["listings"] == ["L2"] and other["listed"] == 1 and other["sold"] == 1 and other["released"] == 1
+        assert other["staked"] == str(SLICE) and other["first_listed"] == _at(10) and other["broken"] == 0
+        assert json.loads(c.seller(STRANGER)) == {"seller": STRANGER.lower(), "known": False, "listings": [], "listed": 0, "sold": 0,
+                                                  "released": 0, "kept": 0, "broken": 0, "unclear": 0, "refunded": 0, "stale": 0,
+                                                  "staked": "0", "stake_paid": "0", "first_listed": ""}
+        stats = json.loads(c.stats())
+        assert stats["sellers"] == 2 and stats["listings"] == 3                # a seller is counted once, however many packs
+        assert stats["stake_held"] == str(6 * SLICE) and stats["stake_paid"] == str(SLICE)
+        assert json.loads(c.seller("x" * 300))["known"] is False
+
+    def test_a_refused_buy_on_a_full_listing_changes_no_record(self):
+        c = _contract(); _listed(c, stake=SLICE); _bought(c)
+        before = (c.stats(), c.listing("L1"), c.seller(SELLER), c.ledger("50"))
+        _as(BUYER2, PRICE); assert json.loads(c.buy("L1"))["ok"] is False
+        assert (c.stats(), c.listing("L1"), c.seller(SELLER), c.ledger("50")) == before
+
+
+# A seeded random walk through every write, checking after each step that the money adds up.
+
+class _Journey:
+    """Many sellers, buyers and listings, every write in a random order, the clock always moving forward.
+
+    After every call it checks what must always be true: every atto the
+    contract holds is a listing's stake, an open order's price or a posted
+    bond; every listing's stake backs all its open orders; every record and
+    total agrees with the orders themselves; and a write that raised changed
+    nothing at all.
+    """
+
+    def __init__(self, seed):
+        self.rng = random.Random(seed)
+        self.c = _contract()
+        self.t = 0
+        self.sent = 0
+        self.seen = set()
+
+    def fingerprint(self):
+        c = self.c
+        return (c.stats(), c.listings("0", "25"), c.ledger("50"), [json.dumps(c._order_row(o)) for o in c.orders],
+                [c.seller(a) for a in (SELLER, SELLER2)], dict(c.judged_digests), dict(c.reveals))
+
+    def call(self, sender, value, fn, *args):
+        _as(sender, value, at=_at(self.t))
+        before = self.fingerprint()
+        self.sent += value
+        try:
+            out = json.loads(getattr(self.c, fn)(*args))
+        except sp.gl.vm.UserError as e:
+            assert value == 0, (fn, "a write that takes value must never raise")
+            assert str(e).startswith(sp.ERROR_EXPECTED) and self.fingerprint() == before, (fn, str(e))
+            out = {"ok": False, "raised": str(e)}
+        self.check()
+        return out
+
+    def pick(self, statuses):
+        ids = [o for o, row in self.c.orders.items() if row.status in statuses]
+        return self.rng.choice(ids) if ids else None
+
+    def step(self):
+        rng, c = self.rng, self.c
+        self.t += rng.choice((30, 60, 300, 600, 3600, 3600, 6 * 3600, 25 * 3600))
+        action = rng.choice(("list", "buy", "buy", "buy", "dispute", "dispute", "judge", "judge", "withdraw_dispute",
+                             "release", "report", "reveal", "refund", "stale", "close", "withdraw_stake"))
+        if action == "list" and len(c.listing_id_list) < 10:
+            price = rng.choice((PRICE, sp.MIN_PRICE, GEN // 2 + 1))
+            slice_ = sp._slice_for_price(price)
+            stake = slice_ * rng.choice((0, 1, 1, 2, 3)) + rng.choice((0, 0, 1, slice_ // 2))
+            title = rng.choice(("Weeknight Vegetarian", "Cold Email Templates", "ab"))
+            out = self.call(rng.choice((SELLER, SELLER2)), stake, "list_pack", title, "recipes", json.dumps(PROMISES),
+                            json.dumps(HASHES), str(price), str(rng.choice((3600, 86400, 3 * 86400))))
+            if out["ok"] is False and "stake" in out["reason"]:
+                self.seen.add("stake refused")
+        elif action == "buy" and c.listing_id_list:
+            listing_id = rng.choice(c.listing_id_list)
+            price = int(c.listings_by_id[listing_id].price)
+            out = self.call(rng.choice((BUYER, BUYER2, BUYER3)), price - rng.choice((0, 0, 0, 0, 1)), "buy", listing_id)
+            if out["ok"] is False and "are taken" in out["reason"]:
+                self.seen.add("capacity refused")
+        elif action == "dispute" and (order_id := self.pick(("paid",))):
+            o = c.orders[order_id]
+            self.call(o.buyer, sp._bond_for_price(int(o.price)), "open_dispute", order_id, str(rng.randrange(5)), str(rng.randrange(3)))
+        elif action == "judge" and (order_id := self.pick(("disputed",))):
+            _ask_returning(c, rng.choice(sp.VERDICTS))
+            self.call(STRANGER, 0, "judge", order_id, SECTIONS[int(c.orders[order_id].section_index)])
+        elif action == "withdraw_dispute" and (order_id := self.pick(("disputed",))):
+            self.call(c.orders[order_id].buyer, 0, "withdraw_dispute", order_id)
+        elif action == "release" and (order_id := self.pick(("paid",))):
+            self.call(STRANGER, 0, "release", order_id)
+        elif action == "report" and (order_id := self.pick(("paid",))):
+            self.call(c.orders[order_id].buyer, 0, "report_missing", order_id, str(rng.randrange(5)))
+        elif action == "reveal" and (order_id := self.pick(("missing",))):
+            self.call(c.orders[order_id].seller, 0, "reveal", order_id, SECTIONS[int(c.orders[order_id].missing_index)])
+        elif action == "refund" and (order_id := self.pick(("missing",))):
+            self.call(STRANGER, 0, "refund_missing", order_id)
+        elif action == "stale" and (order_id := self.pick(("disputed",))):
+            self.call(STRANGER, 0, "settle_stale", order_id)
+        elif action == "close" and c.listing_id_list:
+            listing_id = rng.choice(c.listing_id_list)
+            out = self.call(rng.choice((c.listings_by_id[listing_id].seller, STRANGER)), 0, "close_listing", listing_id)
+            if out.get("ok"):
+                self.seen.add("close returned" if int(out["returned"]) else "close kept")
+        elif action == "withdraw_stake" and c.listing_id_list:
+            listing_id = rng.choice(c.listing_id_list)
+            if self.call(c.listings_by_id[listing_id].seller, 0, "withdraw_stake", listing_id).get("ok"):
+                self.seen.add("withdrawn")
+
+    def check(self):
+        c = self.c
+        listings, orders = c.listings_by_id, list(c.orders.values())
+        stakes = sum(int(l.stake) for l in listings.values())
+        escrow = sum(int(o.price) for o in orders if o.status in OPEN)
+        bonds = sum(int(o.bond) for o in orders)
+        assert self.sent - sum(v for _, v in TRANSFERS) == stakes + escrow + bonds        # nothing made, nothing lost
+        for listing_id, l in listings.items():
+            mine = [o for o in orders if o.listing == listing_id]
+            assert int(l.open_orders) == sum(o.status in OPEN for o in mine), listing_id
+            assert int(l.stake) >= int(l.open_orders) * int(l.slice), listing_id      # every open order is backed in full
+            assert int(l.stake_paid) == sum(int(o.paid_from_stake) for o in mine), listing_id
+            assert (str(l.closed_reason) == "") == bool(l.open) and str(l.closed_reason) in ("", "seller", "out_of_stake")
+            assert not l.open or int(l.stake) >= int(l.slice), listing_id
+            if l.closed_reason == "out_of_stake":
+                self.seen.add("out_of_stake")
+        for o in orders:
+            slashed = (o.status == "settled" and o.verdict == "breaks") or o.status == "refunded"
+            assert int(o.paid_from_stake) == (int(listings[o.listing].slice) if slashed else 0)
+            self.seen.add(o.status + ("/" + o.verdict if o.verdict else ""))
+        for key, r in c.sellers.items():
+            theirs = [i for i, l in listings.items() if l.seller.lower() == key]
+            sold = [o for o in orders if o.seller.lower() == key]
+            assert json.loads(c.listings_by_seller[key]) == theirs and int(r.listed) == len(theirs) and int(r.sold) == len(sold)
+            for field, match in (("released", ("released", "")), ("kept", ("settled", "keeps")), ("broken", ("settled", "breaks")),
+                                 ("unclear", ("settled", "unclear")), ("refunded", ("refunded", "")), ("stale", ("settled_stale", ""))):
+                assert int(getattr(r, field)) == sum((o.status, o.verdict) == match for o in sold), (key, field)
+            assert int(r.staked) == sum(int(listings[i].stake) for i in theirs)
+            assert int(r.stake_paid) == sum(int(listings[i].stake_paid) for i in theirs)
+        assert int(c.seller_count) == len(c.sellers) == len({l.seller.lower() for l in listings.values()})
+        assert int(c.stake_held_total) == stakes and int(c.stake_paid_total) == sum(int(o.paid_from_stake) for o in orders)
+
+
+class TestStakeJourneys:
+    SEEDS = (1, 2, 3, 4, 5, 6)
+
+    def test_every_atto_is_accounted_for_and_every_open_order_is_backed(self):
+        seen = set()
+        for seed in self.SEEDS:
+            journey = _Journey(seed)
+            for _ in range(400):
+                journey.step()
+            seen |= journey.seen
+        # The walk is only evidence if it went everywhere: every final status, every stake path.
+        for path in ("released", "settled/breaks", "settled/keeps", "settled/unclear", "refunded", "settled_stale",
+                     "out_of_stake", "capacity refused", "stake refused", "close returned", "close kept", "withdrawn"):
+            assert path in seen, (path, sorted(seen))
 
 
 # --------------------------------------------------------------- consensus
@@ -1090,7 +1467,7 @@ class TestConsensus:
         out = json.loads(c.judge("O1", SECTIONS[4]))
         assert votes == [True] and len(model.prompts) == 4
         assert out["verdict"] == "breaks" and out["break_answer"] == "yes" and out["keep_answer"] == "no"
-        assert TRANSFERS == [(BUYER, PRICE + BOND)] and c.orders["O1"].status == "settled"
+        assert TRANSFERS == [(BUYER, PRICE + BOND + SLICE)] and c.orders["O1"].status == "settled"
 
 
 # ------------------------------------------------------------------- views
@@ -1105,10 +1482,11 @@ class TestViews:
         rows = json.loads(c.ledger("50"))
         assert [r["order"] for r in rows] == ["O3", "O2", "O1"] and rows[1]["title"] == "Cold Email Templates"
         assert set(rows[2]) == {"order", "listing", "title", "buyer", "seller", "price", "status", "verdict", "section_index",
-                                "promise_index", "judged_at", "paid_buyer", "paid_seller"}
-        assert rows[2]["verdict"] == "breaks" and rows[2]["paid_buyer"] == str(PRICE + BOND) and rows[2]["judged_at"] == _at(5)
+                                "promise_index", "judged_at", "paid_buyer", "paid_seller", "paid_from_stake"}
+        assert rows[2]["verdict"] == "breaks" and rows[2]["paid_buyer"] == str(PRICE + BOND + SLICE) and rows[2]["paid_from_stake"] == str(SLICE) and rows[2]["judged_at"] == _at(5)
         assert len(json.loads(c.ledger("x"))) == 3 and len(json.loads(c.ledger("0"))) == 3
-        assert json.loads(c.stats()) == {"listings": 2, "orders": 3, "kept": 0, "broken": 1, "unclear": 0, "refunded": 0, "released": 0, "stale": 0}
+        assert json.loads(c.stats()) == {"listings": 2, "orders": 3, "kept": 0, "broken": 1, "unclear": 0, "refunded": 0, "released": 0, "stale": 0,
+                                         "stake_held": str(2 * STAKE - SLICE), "stake_paid": str(SLICE), "sellers": 1}
         assert c.ledger("999").count('"order"') == 3
 
     def test_the_ledger_never_returns_more_rows_than_its_cap(self):
@@ -1154,8 +1532,10 @@ class TestViews:
         c = _contract(); _listed(c, price=sp.MIN_PRICE)
         rules = json.loads(c.rules())
         assert rules["verdicts"] == ["breaks", "keeps", "unclear"] and set(rules["who"]) == {
-            "list_pack", "close_listing", "buy", "open_dispute", "withdraw_dispute", "judge", "release",
+            "list_pack", "close_listing", "withdraw_stake", "buy", "open_dispute", "withdraw_dispute", "judge", "release",
             "report_missing", "reveal", "refund_missing", "settle_stale"}
+        assert rules["slice_percent"] == sp.STAKE_SLICE_PERCENT == 50 and "one slice" in rules["money"]["breaks"]
+        assert "one slice" in rules["money"]["refunded"] and "one slice" not in rules["money"]["unclear"]
         assert rules["money"]["unclear"].startswith("price to the seller") and rules["stale_hours"] == 24 and rules["reveal_hours"] == 24
         assert c.bond_for("L1") == str(sp.MIN_PRICE * 20 // 100) and json.loads(c.bond_for("L2"))["error"]
         assert json.loads(c.listing("L" + "1" * 300))["error"]
@@ -1180,7 +1560,7 @@ class TestSentence:
     def test_a_verdict_settles_into_one_sentence_the_contract_wrote(self):
         for verdict, section, promise, want in (
             ("breaks", 4, 0, "A majority of the validators found that section 5 breaks promise 1, "
-                             "so the buyer got the price and the bond back: 1.2 GEN."),
+                             "so the buyer got the price, the bond and one slice of the seller's stake (0.5 GEN) back: 1.7 GEN."),
             ("keeps", 2, 1, "A majority of the validators found that section 3 keeps promise 2, "
                             "so the seller got the price and the bond: 1.2 GEN."),
             # "unclear" is five cells of the combine table, two of which are the framings flatly
@@ -1220,7 +1600,7 @@ class TestSentence:
         _as(BUYER, at=_at(60)); c.report_missing("O1", "2")
         _as(STRANGER, at=_at(60 + 24 * 3600)); c.refund_missing("O1")
         assert self._line(c) == ("Section 3 was reported missing and not revealed within 24 hours, "
-                                 "so the buyer got the full price back: 1 GEN.")
+                                 "so the buyer got the full price back plus one slice of the seller's stake: 1.5 GEN.")
 
     def test_a_price_with_a_fraction_reads_back_exactly(self):
         price = GEN // 2 + 1                                 # 0.500000000000000001 GEN, bond 0.1 GEN
@@ -1229,8 +1609,9 @@ class TestSentence:
         _as(BUYER, bond); assert json.loads(c.open_dispute("O1", "0", "0"))["ok"]
         _ask_returning(c, "breaks", "yes", "no")
         _as(STRANGER, at=_at(60)); c.judge("O1", SECTIONS[0])
-        assert self._line(c).endswith(sp._gen_text(price + bond) + ".")
-        assert sp._gen_text(price + bond) == "0.600000000000000001 GEN"
+        slice_ = sp._slice_for_price(price)
+        assert slice_ == GEN // 4 and self._line(c).endswith("(0.25 GEN) back: " + sp._gen_text(price + bond + slice_) + ".")
+        assert sp._gen_text(price + bond + slice_) == "0.850000000000000001 GEN"
 
 
 # ------------------------------------------------------------- static rules
@@ -1269,14 +1650,14 @@ class TestStaticRules:
 
     def test_the_open_writes_still_exist_and_say_so_in_their_docstrings(self):
         names = {fn.name for fn in _writes()}
-        assert set(names) == {"list_pack", "close_listing", "buy", "open_dispute", "withdraw_dispute", "judge",
+        assert set(names) == {"list_pack", "close_listing", "withdraw_stake", "buy", "open_dispute", "withdraw_dispute", "judge",
                               "release", "report_missing", "reveal", "refund_missing", "settle_stale"}
         for n in self.OPEN_ON_PURPOSE:
             assert n in names
             assert "Open on purpose" in (ast.get_docstring(_fn(n)) or ""), n
 
     def test_the_gated_writes_compare_the_sender_to_the_row(self):
-        for name, owner in (("close_listing", "listing.seller"), ("open_dispute", "order.buyer"),
+        for name, owner in (("close_listing", "listing.seller"), ("withdraw_stake", "listing.seller"), ("open_dispute", "order.buyer"),
                             ("withdraw_dispute", "order.buyer"), ("report_missing", "order.buyer"), ("reveal", "order.seller")):
             body = ast.unparse(_fn(name))
             assert "sender_address != " + owner in body or "sender != " + owner in body, name
@@ -1353,6 +1734,18 @@ class TestStaticRules:
         assert "time.time(" not in SRC and "float(" not in SRC and "round(" not in SRC
         assert not re.search(r"[^/]/[^/]", ast.unparse(_fn("_iso_from_seconds")))   # integer division only
 
+    def test_caller_json_never_builds_a_float(self):
+        """The stub runs on CPython, where a float is harmless; on chain building one traps the VM, and a trap
+        is not an exception the readers can catch. Every json.loads on what a caller sent refuses first."""
+        for name in ("_read_promises", "_read_hashes"):
+            calls = [n for n in ast.walk(_fn(name)) if isinstance(n, ast.Call) and ast.unparse(n.func) == "json.loads"]
+            assert calls, name
+            for call in calls:
+                hooks = {k.arg: ast.unparse(k.value) for k in call.keywords}
+                assert hooks == {"parse_float": "_no_fraction", "parse_constant": "_no_fraction"}, (name, ast.unparse(call))
+        with pytest.raises(ValueError):
+            sp._no_fraction("1.5")
+
     def test_the_revealed_mask_is_wide_enough_for_every_section(self):
         """revealed_mask is a u32 and carries one bit per section. Above 32 sections the bit for
         section 32 would be lost, report_missing would stop refusing an already-revealed section,
@@ -1364,7 +1757,7 @@ class TestStaticRules:
         assert sp.MAX_MISSING_REPORTS < sp.MAX_SECTIONS             # a cap that bites before the pack runs out
 
     def test_storage_holds_scalars_only(self):
-        for cls in ("Listing", "Order"):
+        for cls in ("Listing", "Order", "SellerRecord"):
             node = next(n for n in ast.walk(TREE) if isinstance(n, ast.ClassDef) and n.name == cls)
             for stmt in node.body:
                 if isinstance(stmt, ast.AnnAssign):

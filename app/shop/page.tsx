@@ -10,7 +10,8 @@ import { StartHere } from "@/components/start-here";
 import { CardGridSkeleton, ReadBlock, readEach } from "@/components/read-state";
 import { YourRegisterNotice } from "@/components/register-line";
 import { useRead } from "@/components/use-read";
-import { isMock, readAllListings, type Listing } from "@/lib/chain";
+import { BackingLine, SellerRecordLine } from "@/components/stake";
+import { isMock, readAllListings, readSeller, type Listing, type SellerRecord } from "@/lib/chain";
 import { packStatus } from "@/lib/api";
 import { isDemoHashes } from "@/lib/demo-keys";
 import { DEMO_PACKS } from "@/lib/demo-packs";
@@ -23,6 +24,12 @@ type Row = { listing: Listing; uploaded: boolean | null };
 
 /** Below this many open packs the shop says how more get here. */
 const FEW_PACKS = 6;
+/**
+ * Seller records read per visit, one seller() call each, sellers with the most listings first.
+ * Studio allows 30 reads a minute; a card past the cap links to its seller's page instead.
+ */
+const SELLER_READS = 6;
+const NO_RECORDS = new Map<string, SellerRecord>();
 
 async function uploadedOf(l: Listing): Promise<boolean | null> {
   if (isMock) return mockPackUploaded(l.id);
@@ -52,9 +59,33 @@ async function readShop() {
   return { data: sorted, source: all.source } as const;
 }
 
+/** The sellers whose records the shelf reads: the ones with the most listings on it first, up to SELLER_READS. */
+function sellersOf(rows: Row[]): string[] {
+  const shelf = new Map<string, number>();
+  for (const { listing: l } of rows) shelf.set(l.seller, (shelf.get(l.seller) ?? 0) + 1);
+  return [...shelf.keys()].sort((a, b) => shelf.get(b)! - shelf.get(a)!).slice(0, SELLER_READS);
+}
+
+/**
+ * Seller records for the cards, read once the shelf is on screen: they only fill the "sold · kept ·
+ * broken" line, so a slow or rate-limited seller() never holds the cards back. A record that does
+ * not answer leaves its cards with the seller link alone.
+ */
+async function readRecords(sellers: string[]) {
+  const reads = await readEach(sellers, (a) => readSeller(a));
+  const records = new Map<string, SellerRecord>();
+  reads.forEach((r, i) => {
+    if (r.status === "fulfilled" && r.value.data) records.set(sellers[i], r.value.data);
+  });
+  return { data: records, source: "chain" } as const;
+}
+
 export default function ShopPage() {
   const router = useRouter();
   const state = useRead(readShop, []);
+  const sellers = state.data ? sellersOf(state.data) : [];
+  const records = useRead(() => readRecords(sellers), [sellers.join(",")], { enabled: sellers.length > 0 });
+  const recordOf = records.data ?? NO_RECORDS;
   const demoSeller = DEMO_SELLER.toLowerCase();
 
   return (
@@ -107,9 +138,12 @@ export default function ShopPage() {
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {rows.map(({ listing: l, uploaded }) => {
+                  const full = l.open && l.stakeKnown && l.free <= 0;
                   // uploaded === null: the site could not check, so it says nothing about delivery.
-                  const badge = !l.open ? "Closed" : uploaded === false ? "Not delivered yet" : uploaded === null ? undefined : l.seller.toLowerCase() === demoSeller ? "Demo" : undefined;
-                  const tone = !l.open ? "muted" : uploaded === false ? "warn" : "primary";
+                  const badge = !l.open
+                    ? l.closedReason === "out_of_stake" ? "Out of stake" : "Closed"
+                    : full ? "All slots taken" : uploaded === false ? "Not delivered yet" : uploaded === null ? undefined : l.seller.toLowerCase() === demoSeller ? "Demo" : undefined;
+                  const tone = !l.open ? "muted" : full || uploaded === false ? "warn" : "primary";
                   return (
                     <ProductCard
                       key={l.id}
@@ -122,7 +156,13 @@ export default function ShopPage() {
                       broken={l.broken}
                       unclear={l.unclear}
                       meta={`${l.promises.length} ${l.promises.length === 1 ? "promise" : "promises"} · ${l.sectionCount} ${l.sectionCount === 1 ? "section" : "sections"} · ${l.orders} ${l.orders === 1 ? "order" : "orders"}`}
-                      buyLabel={l.open ? "Buy" : "View"}
+                      details={
+                        <>
+                          <BackingLine l={l} />
+                          <SellerRecordLine address={l.seller} record={recordOf.get(l.seller) ?? null} />
+                        </>
+                      }
+                      buyLabel={l.open && !full ? "Buy" : "View"}
                       onBuy={() => router.push(`/pack/${l.id}`)}
                     />
                   );

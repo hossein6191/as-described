@@ -14,8 +14,8 @@ export const metadata: Metadata = { title: { absolute: `${SITE_NAME}: ${SITE_TAG
 const STEPS = [
   {
     step: "1",
-    name: "List with promises",
-    description: "The seller commits every section by hash and writes up to six plain-English promises about the pack.",
+    name: "List with promises and a stake",
+    description: "The seller commits every section by hash, writes up to six plain-English promises, and puts a stake behind them: one slice of it, half the price, backs each open order.",
     Icon: ListChecks,
   },
   {
@@ -45,14 +45,14 @@ const STEPS = [
   {
     step: "6",
     name: "Money moves by the verdict",
-    description: "Breaks: price and bond go back to the buyer. Keeps: both go to the seller. Unclear: the seller keeps the price and the bond goes back. Nobody can refuse the outcome.",
+    description: "Breaks: price and bond go back to the buyer, plus one slice of the seller's stake. Keeps: both go to the seller. Unclear: the seller keeps the price and the bond goes back. Nobody can refuse the outcome, and every seller's record is public.",
     Icon: Coins,
   },
 ];
 
 /** The combining rule in the contract (_combine): the model answers, code decides the word. */
 const OUTCOMES = [
-  { answers: "yes, no", word: "breaks", tone: "text-breaks", money: "price and bond back to the buyer" },
+  { answers: "yes, no", word: "breaks", tone: "text-breaks", money: "price and bond back to the buyer, plus one slice of the seller's stake" },
   { answers: "no, yes", word: "keeps", tone: "text-keeps", money: "price and bond to the seller" },
   { answers: "anything else", word: "unclear", tone: "text-gold", money: "price to the seller, bond back to the buyer" },
 ];
@@ -76,7 +76,7 @@ const VALIDATOR_STEPS = [
   },
   {
     title: "The money moves in the same transaction.",
-    body: "The call that stores the verdict also pays the buyer or the seller. There is no second step for anyone to refuse.",
+    body: "The call that stores the verdict also pays the buyer or the seller, and on breaks one slice of the seller's stake goes to the buyer with it. There is no second step for anyone to refuse.",
   },
 ];
 
@@ -87,9 +87,9 @@ export default function HomePage() {
         <LogoMark size={72} className="drop-shadow-[0_8px_30px_rgba(0,0,0,0.55)]" />
         <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-balance text-white sm:text-5xl">{SITE_TAGLINE}</h1>
         <p className="max-w-2xl text-base text-pretty text-white/80 sm:text-lg">
-          Sell a text pack with promises. Buyers pay into escrow. If a section breaks a promise, validators on GenLayer judge that
-          one section against that one promise, and the money moves by their verdict: nobody can refuse a refund, nobody can fake the
-          evidence.
+          Sell a text pack with promises, and put a stake behind them. Buyers pay into escrow. If a section breaks a promise,
+          validators on GenLayer judge that one section against that one promise, and the money moves by their verdict, a slice of the
+          seller&apos;s stake with it: nobody can refuse a refund, nobody can fake the evidence.
         </p>
         <HeroCtas />
       </section>
@@ -163,7 +163,8 @@ export default function HomePage() {
 
           <p className="text-xs text-muted-foreground text-pretty">
             Nothing is judged until someone presses Ask the validators on the order. If nobody does within 24 hours of the bond, anyone
-            can settle by rule: the seller gets the price and the buyer gets the bond back.
+            can settle by rule: the seller gets the price and the buyer gets the bond back. A section the buyer reports missing and the
+            seller never reveals refunds the price and one slice of the stake, with no model asked.
           </p>
         </div>
       </section>

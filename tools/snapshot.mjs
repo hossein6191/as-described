@@ -46,6 +46,8 @@ const atto = (v) => (/^\d+$/.test(str(v, "0").trim()) ? str(v).trim() : "0");
 const addr = (v) => str(v).toLowerCase();
 const listOf = (v) => (Array.isArray(v) ? v.map(String) : []);
 
+// A register deployed before stakes has no "stake" in its rows: the snapshot says so (stakeKnown
+// false) instead of writing zeros the site would read as an empty stake.
 const asListing = (row) => ({
   id: str(row.listing ?? row.id),
   seller: addr(row.seller),
@@ -62,6 +64,31 @@ const asListing = (row) => ({
   kept: num(row.kept),
   broken: num(row.broken),
   unclear: num(row.unclear),
+  stakeKnown: "stake" in row,
+  stakeAtto: atto(row.stake),
+  sliceAtto: atto(row.slice),
+  openOrders: num(row.open_orders),
+  capacity: num(row.capacity),
+  free: num(row.free),
+  stakePaidAtto: atto(row.stake_paid),
+  closedReason: ["seller", "out_of_stake"].includes(str(row.closed_reason)) ? str(row.closed_reason) : "",
+});
+
+const asSeller = (row, address) => ({
+  seller: addr(row.seller ?? address),
+  known: row.known === true,
+  listings: listOf(row.listings),
+  listed: num(row.listed),
+  sold: num(row.sold),
+  released: num(row.released),
+  kept: num(row.kept),
+  broken: num(row.broken),
+  unclear: num(row.unclear),
+  refunded: num(row.refunded),
+  stale: num(row.stale),
+  stakedAtto: atto(row.staked),
+  stakePaidAtto: atto(row.stake_paid),
+  firstListed: str(row.first_listed),
 });
 
 const asOrder = (row) => {
@@ -90,6 +117,7 @@ const asOrder = (row) => {
     missingReportsLeft: "missing_reports_left" in row ? num(row.missing_reports_left, 0) : null,
     paidBuyer: atto(row.paid_buyer),
     paidSeller: atto(row.paid_seller),
+    paidFromStake: atto(row.paid_from_stake),
     windowOpen: row.window_open === true,
     bondRequiredAtto: atto(row.bond_required),
     revealed: Array.isArray(row.revealed)
@@ -115,6 +143,7 @@ const ledgerRow = (o) => ({
   judgedAt: o.judgedAt,
   paidBuyer: o.paidBuyer,
   paidSeller: o.paidSeller,
+  paidFromStake: o.paidFromStake,
   openedAt: o.openedAt,
 });
 
@@ -141,6 +170,15 @@ for (const row of ledgerRaw) {
   await sleep(2500);
 }
 
+// One seller record per seller on the shelf; a register deployed before seller records has none.
+const sellers = {};
+if (Object.values(listings).some((l) => l.stakeKnown)) {
+  for (const a of [...new Set(Object.values(listings).map((l) => l.seller))]) {
+    sellers[a] = asSeller(await view("seller", [a]), a);
+    await sleep(2500);
+  }
+}
+
 const snapshot = {
   takenAt: new Date().toISOString(),
   network: "GenLayer Studio, chain 61999",
@@ -159,8 +197,13 @@ const snapshot = {
     refunded: num(stats.refunded),
     released: num(stats.released),
     stale: num(stats.stale),
+    stakeKnown: "stake_held" in stats,
+    stakeHeldAtto: atto(stats.stake_held),
+    stakePaidAtto: atto(stats.stake_paid),
+    sellers: num(stats.sellers),
   },
   bonds,
+  sellers,
 };
 
 writeFileSync(OUT, JSON.stringify(snapshot, null, 2) + "\n");

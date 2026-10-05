@@ -8,26 +8,193 @@ of the pack by hash and writes up to six plain-English promises. A buyer pays in
 one section breaks a promise, the buyer reveals that section on chain; GenLayer validators
 independently decide whether it breaks the promise, and the contract moves the money by their
 verdict. Nobody can refuse a refund, and nobody can fake the evidence: the revealed text must
-hash to what the seller committed before the sale.
+hash to what the seller committed before the sale. And the seller stands behind every promise
+with a stake: a broken promise pays the buyer a slice of it, and every seller's record is public
+on chain.
 
 - Live site: <https://as-described.vercel.app>
-- Register: `0x197478dA434994220368cE3e32179B9409f1509D` on GenLayer Studio, chain 61999, deployed from
-  the author's own wallet on 23 September 2026. The source read back from the chain with
-  `gen_getContractCode` is byte-identical to `contracts/as_described.py` (sha256
-  `eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803`), which is also the file the
-  site serves at `/contracts/as_described.py` for anyone who wants their own register.
-- Explorer: <https://explorer-studio.genlayer.com/address/0x197478dA434994220368cE3e32179B9409f1509D>
+- Version 2 (this repository): register `0xE31e77984bce5623AB50c7CB5530a030B9173718` on GenLayer
+  Studio, chain 61999, deployed on 5 October 2026 from the current `contracts/as_described.py`
+  (the file the site serves at `/contracts/as_described.py` for anyone who wants their own
+  register). `gen_getContractCode` returns it byte for byte (sha256
+  `1b46d8babe20e105cc86f82d3ebdc3612bb7f67570d906a175800212a1cb3adf`). Its run is under
+  [Evidence for version 2](#evidence-for-version-2).
+  Explorer: <https://explorer-studio.genlayer.com/address/0xE31e77984bce5623AB50c7CB5530a030B9173718>
+- Version 1, the accepted version (commit `11aeb18`): register
+  `0x197478dA434994220368cE3e32179B9409f1509D` on GenLayer Studio, chain 61999, deployed from the
+  author's own wallet on 23 September 2026. The source read back from the chain with
+  `gen_getContractCode` is byte-identical to `contracts/as_described.py` at that commit (sha256
+  `eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803`). It stays readable on the
+  explorer as the accepted version, and the site still reads it: a register from before stakes
+  shows no stake, never a stake of zero, and the delivery API still accepts its code.
+  Explorer: <https://explorer-studio.genlayer.com/address/0x197478dA434994220368cE3e32179B9409f1509D>
 
 Built on GenLayer Studio (chain 61999). Test GEN only, no real money.
 
+## Version 2: the seller stands behind the promises
+
+Everything in this section is new since the accepted version, commit `11aeb18`; `git diff 11aeb18`
+shows all of it.
+
+**The weakness it fixes.** In version 1 all the risk sat with the buyer. To dispute, the buyer
+posts a bond of 20 % of the price and loses it on `keeps`. A seller who broke a promise lost only
+that one sale: the buyer got the price and the bond back and the seller ended where they would
+have been without listing at all. Listing a pack that did not match its promises was a free
+option, and nothing on chain told the next buyer how a seller had done before.
+
+**What version 2 does about it.**
+
+1. **A stake behind every promise.** `list_pack` is now payable: the value sent is the listing's
+   stake, at least one *slice*, which is half the price. Each open order (`paid`, `disputed` or
+   `missing`) holds one slice, so a listing takes `stake ÷ slice` open orders at a time, and every
+   buyer has a whole slice behind them for as long as their order is open. The contract keeps
+   `stake >= open_orders × slice` on every listing after every call.
+2. **A broken promise costs the seller.** A `breaks` verdict, by the validators or by rule on an
+   oversize section, pays the buyer the price, the bond **and one slice of the stake**, in one
+   transfer. A section the buyer reported missing and the seller never revealed (`refund_missing`)
+   pays the price plus one slice. `keeps`, `unclear`, `release` and `settle_stale` never touch the
+   stake. A listing left with less than one slice closes itself (`closed_reason: out_of_stake`).
+3. **Every seller's record is public.** A new view, `seller(address)`, answers what the address
+   listed, sold, released, kept, broke, left unclear, had refunded and had settled stale, what its
+   stakes hold now and what they have paid buyers. The record is written in the same calls that
+   move the money, so it cannot drift from the orders. The site shows it on every pack and on a
+   new seller page.
+4. **Any website can show and sell a listing.** An iframe card, an SVG badge and public JSON,
+   below. Buying still happens on this site, in a new tab.
+
+A worked example. A pack costs 1 GEN and the seller lists it with a stake of 1 GEN: two slices of
+0.5 GEN, so two buyers can hold orders at once and a third is refused, with the price returned,
+until one of them ends. The validators find that a section breaks a promise: that buyer gets
+1 GEN + 0.2 GEN bond + 0.5 GEN from the stake = 1.7 GEN, and the contract's own sentence says so
+("…so the buyer got the price, the bond and one slice of the seller's stake (0.5 GEN) back:
+1.7 GEN."). The stake is now 0.5 GEN, one slice, so the listing serves one buyer at a time. A
+second broken promise takes the last slice and the listing closes itself. The seller's record now
+reads 2 broken and 1 GEN paid to buyers, for anyone to read.
+
+### The contract, what changed
+
+| | version 2 |
+|---|---|
+| constant | `STAKE_SLICE_PERCENT = 50`: one slice is half the price, fixed on the listing when it is listed |
+| `list_pack(title, kind, promises_json, hashes_json, price_atto, window_seconds)` | now `@gl.public.write.payable`; the value is the stake, at least one slice. Every refusal, the old field checks included, refunds and returns `{"ok": false, "reason": "…; your funds were returned", "returned": "<atto>"}`; it never raises after taking value. Success adds `stake`, `slice` and `capacity` |
+| `buy(listing_id)` | refused, and refunded, while every slice backs an open order: "this listing's stake backs 2 open orders at a time and all 2 are taken; try again when one ends". Every refusal now says how much came back (`returned`) |
+| `judge`, `refund_missing` | the slash: one slice from the listing's stake to the buyer, in the same transfer; both return `paid_from_stake` |
+| `close_listing(listing_id)` | with no order open, the whole stake comes back in the same call; otherwise it stays behind the open orders. Returns `returned` and `open_orders` |
+| `withdraw_stake(listing_id)` | **new**. The seller, once the listing is closed and no order is open: what is left of the stake goes back |
+| `seller(address_hex)` | **new view**. `{seller, known, listings, listed, sold, released, kept, broken, unclear, refunded, stale, staked, stake_paid, first_listed}`; an address that never listed answers `known: false` and zeros |
+| listing rows (`listing`, `listings`) | add `stake`, `slice`, `open_orders`, `capacity`, `free`, `stake_paid`, `closed_reason` (`""`, `seller` or `out_of_stake`) |
+| order and ledger rows | add `paid_from_stake`, the part of `paid_buyer` that came from the seller's stake |
+| `stats()` | adds `stake_held`, `stake_paid` and `sellers` |
+| `rules()` | publishes the stake, the slice, capacity, the slash, the self-close and close/withdraw |
+| storage | appended at the end, never reordered: `Listing.stake`, `slice`, `open_orders`, `stake_paid`, `closed_reason`; `Order.paid_from_stake`; a new `SellerRecord` dataclass of scalars only; contract fields `sellers`, `listings_by_seller`, `seller_count`, `stake_held_total`, `stake_paid_total` |
+| hardening | `list_pack`, `buy` and `open_dispute` read an argument that is not a string as a refusal with a refund, never a crash that strands the value; caller JSON with a fraction, an exponent, `NaN` or `Infinity` is refused before a float is built, because floats trap the VM |
+
+Unchanged from version 1: the hash commitments, the judge round and its two framings, the
+fences, the judged digests, the missing and reveal path, `withdraw_dispute` and the clock rules.
+Why each new rule is what it is (why the seller stakes, why a slice is half the price, why
+capacity, why `refund_missing` slashes and `keeps`, `unclear` and stale do not, why closing
+returns the stake only when nothing is open) is in `docs/DECISIONS.md`.
+
+### The site, what changed
+
+- **Sell:** a stake field that defaults to two slices (the price), with one-click 1, 2 and 4 slices,
+  checked against one slice and the wallet's balance; the button reads "List for 1 GEN · stake
+  1 GEN", and a refusal shows the reason and how much came back.
+- **Shop and pack pages:** "Backed by 1.5 GEN · 2 more buyers can be covered now", the seller's
+  record, and "All slots taken" or "Out of stake" in place of a buy the contract would refuse.
+- **Seller page, `/seller/<address>`:** the record, the stake held and paid out, the seller's
+  listings and recent orders, and for the seller their own Close and Withdraw controls (also on
+  My orders).
+- **Order page, ledger, stats:** the slice behind an open order, the part of each payout that came
+  from a stake, and the stake held, paid out and the number of sellers.
+- A register deployed before version 2, the accepted one included, is still read correctly, and
+  listing on it sends no stake.
+
+### Sell it anywhere: the card, the badge and the JSON
+
+Every pack page has a "Sell it anywhere" box with these snippets filled in. `L1` stands for any
+listing id. All three read the site's own register on the server, are read-only and need no
+wallet, and are refreshed about once a minute (while Studio is busy, an answer up to ten minutes
+old stands in, marked stale). Buying happens on this site in a new tab, because a wallet does not
+connect inside another site's frame. `/embed/*` is the only path another site may frame.
+
+A card, 380 × 440: title, price, promises, the stake behind them, the seller's record and a buy
+button.
+
+```html
+<iframe src="https://as-described.vercel.app/embed/L1" title="L1 on As Described" width="380" height="440" style="border:0;border-radius:16px;max-width:100%" loading="lazy"></iframe>
+```
+
+A badge for a README or a forum post: "As Described | 2 sold · 1 broken · 1.5 GEN staked · 0.5 GEN
+paid to buyers", teal while every promise held, orange once one broke or the stake paid a
+buyer, grey once the listing is closed.
+
+```markdown
+[![As Described](https://as-described.vercel.app/api/badge/L1)](https://as-described.vercel.app/pack/L1)
+```
+
+The listing and its seller's record as JSON, CORS `*`, fields named as the contract's views name
+them, amounts in atto as decimal strings:
+
+```bash
+curl -s https://as-described.vercel.app/api/listing/L1
+```
+
+```json
+{
+  "ok": true,
+  "register": "0x…",
+  "chain_id": 61999,
+  "read_at": "2026-10-05T09:00:00.000Z",
+  "stale_read": false,
+  "listing": {
+    "listing": "L1", "title": "Weeknight Vegetarian, 8 recipes", "kind": "recipes", "seller": "0x…",
+    "price": "1000000000000000000", "bond": "200000000000000000",
+    "promises": ["…"], "hashes": ["…"], "section_count": 8, "window_seconds": 259200,
+    "created_at": "…", "open": true, "closed_reason": "",
+    "orders": 2, "kept": 0, "broken": 1, "unclear": 0,
+    "stakes": true, "stake": "1500000000000000000", "slice": "500000000000000000",
+    "open_orders": 1, "capacity": 3, "free": 2, "stake_paid": "500000000000000000"
+  },
+  "seller": {
+    "seller": "0x…", "known": true, "listings": ["L1", "L2"], "listed": 2, "sold": 4,
+    "released": 0, "kept": 1, "broken": 1, "unclear": 0, "refunded": 0, "stale": 0,
+    "staked": "2500000000000000000", "stake_paid": "500000000000000000", "first_listed": "…"
+  },
+  "links": {
+    "pack": "https://as-described.vercel.app/pack/L1",
+    "embed": "https://as-described.vercel.app/embed/L1",
+    "badge": "https://as-described.vercel.app/api/badge/L1",
+    "seller": "https://as-described.vercel.app/seller/0x…"
+  }
+}
+```
+
+`400` for an id that is not a listing id, `404` for one the register does not hold, `503` with a
+`reason` when nothing could be read. The budgets and caching are in `docs/API.md`.
+
+### Checks for version 2
+
+| check | version 1 | version 2 |
+|---|---|---|
+| `pytest tests/ -q`, offline with a stub runtime | 84 tests | 98 tests, among them seeded random journeys of 400 steps through every write that check, after each step, that every atto the contract holds is a stake, an open order's price or a bond, that every open order has a whole slice behind it, and that every seller record and total matches the orders |
+| `tools/mutate.py`, defences removed or inverted one at a time | 83, all killed | 151, all killed (`tests/MUTATIONS.md`) |
+| `genvm-lint check contracts/as_described.py` | passes | passes |
+| site: `tsc`, `eslint`, node unit tests, `next build` | 14 unit tests | 19 unit tests (the badge and the public-read budget among them); every route renders in mock mode |
+| `tests/on_chain/smoke.mjs` on Studio | run | extended for the stake: a refused listing returns its stake, `breaks` pays 1.7 GEN on a 1 GEN pack listed with one slice and that listing closes itself out of stake, a third order is refused while two are open, close with an order open keeps the stake and `withdraw_stake` returns it after, close with nothing open returns it at once, and the seller record and the stake totals match the run. 86 passed, 0 failed on 5 October 2026: [Evidence for version 2](#evidence-for-version-2) |
+
 ## How it works
 
-1. **List with promises.** The seller writes the sections, the site hashes each one (sha256 of
-   the exact bytes), and `list_pack` puts the title, the promises, the hashes, the price and the
-   dispute window on chain. Only then does the seller upload the text to the delivery store,
-   with a wallet signature bound to the hash manifest.
-2. **Buy into escrow.** `buy` takes exactly the price and holds it. The buyer signs once to
-   fetch the sections; the browser hashes each one and shows whether it matches the commitment.
+1. **List with promises and a stake.** The seller writes the sections, the site hashes each one
+   (sha256 of the exact bytes), and `list_pack` puts the title, the promises, the hashes, the
+   price and the dispute window on chain, with the seller's stake as the value of the call: at
+   least one slice (half the price), and each slice backs one open order. Only then does the
+   seller upload the text to the delivery store, with a wallet signature bound to the hash
+   manifest.
+2. **Buy into escrow.** `buy` takes exactly the price and holds it, and the order holds one
+   slice of the seller's stake until it ends; while every slice is taken, a buy is refused and
+   the price comes back. The buyer signs once to fetch the sections; the browser hashes each one
+   and shows whether it matches the commitment.
 3. **Reveal one section.** The buyer picks the section and the promise it breaks, posts a bond
    (20 % of the price) with `open_dispute`, then `judge` carries the section text on chain. The
    contract checks the hash first; text that was not committed is refused before any model runs.
@@ -37,12 +204,17 @@ Built on GenLayer Studio (chain 61999). Test GEN only, no real money.
    `unclear`. The validator compares only that word with the leader's. Nothing the model wrote
    is stored: the contract builds the sentence the site shows out of the verdict word, the
    section and promise numbers and the amounts, and stores it as `verdict_line`.
-5. **Money moves by the verdict.** `breaks`: price and bond go back to the buyer. `keeps`:
-   price and bond go to the seller. `unclear`: price to the seller, bond back to the buyer.
-   No dispute by the end of the window: anyone may `release` the price to the seller.
+5. **Money moves by the verdict.** `breaks`: price and bond go back to the buyer, plus one
+   slice of the seller's stake. `keeps`: price and bond go to the seller. `unclear`: price to
+   the seller, bond back to the buyer. No dispute by the end of the window: anyone may `release`
+   the price to the seller.
 6. **A section that never arrived** is a different path with no model at all: the buyer
    reports it, the seller has 24 hours to reveal the text on chain (hash-checked), and if they
-   do not, anyone may trigger a full refund.
+   do not, anyone may trigger a full refund, plus one slice of the seller's stake.
+7. **The record and the stake.** Every outcome is added to the seller's public record in the
+   same call. A listing whose stake falls below one slice closes itself; a seller who closes a
+   listing gets the stake back in the same call when no order is open, or with `withdraw_stake`
+   once the last one has ended.
 
 Every refusal is a signed transaction whose reason is in its receipt on the explorer, and a
 refused payable call returns the value in the same transaction. The ledger lists orders, and it
@@ -87,13 +259,15 @@ applied. A round with no majority stores nothing and may be asked again.
 ```
 contracts/as_described.py     the Intelligent Contract (old-SDK runner 1jb45…, Studio 61999)
 public/contracts/…            the same file, served by the site's /deploy page (a test keeps them identical)
-tests/test_pure.py            84 offline tests with a stub runtime; no network
-tests/MUTATIONS.md            83 defences removed or inverted one at a time, every mutant killed (tools/mutate.py)
-tests/unit/                   14 node tests for the site's retry, cooldown, read-cache and budget helpers
+tests/test_pure.py            98 offline tests with a stub runtime; no network
+tests/MUTATIONS.md            151 defences removed or inverted one at a time, every mutant killed (tools/mutate.py)
+tests/unit/                   19 node tests for the site's retry, cooldown, read-cache and budget helpers, and the badge
 tests/on_chain/smoke.mjs      throwaway-account run against Studio; results in tests/on_chain.md
 tests/site/e2e.mjs            the whole journey through a browser against a throwaway register
-app/, components/, lib/       the Next.js site (shop, pack, order, sell, ledger, orders, deploy)
+app/, components/, lib/       the Next.js site (shop, pack, order, sell, ledger, orders, seller, deploy)
 app/api/packs/[id]/…          the delivery API (signed upload, signed read, status)
+app/embed/[id], app/api/badge/[id], app/api/listing/[id]
+                              a listing for other websites: an iframe card, an SVG badge, public JSON (docs/API.md)
 docs/                         CONTRACTS.md · DECISIONS.md · API.md · BRAND.md
 lib/demo-packs.ts             nineteen demo packs, three or more per kind, real content (most with one quiet broken promise)
 ```
@@ -130,9 +304,10 @@ served from the repository.
 
 | call | who | value |
 |---|---|---|
-| `list_pack` | anyone, becomes the seller | none |
-| `close_listing` | the seller | none |
-| `buy` | anyone but the seller, becomes the buyer | exactly the price |
+| `list_pack` | anyone, becomes the seller | the stake: at least one slice, half the price |
+| `close_listing` | the seller; the stake comes back in the same call when no order is open | none |
+| `withdraw_stake` | the seller, once the listing is closed and no order is open | none |
+| `buy` | anyone but the seller, becomes the buyer, while a slice of the stake is free | exactly the price |
 | `open_dispute` | the buyer, before the deadline, once | exactly the bond |
 | `withdraw_dispute` | the buyer, while the order is disputed | none |
 | `judge` | anyone (the text is bound by hash; the caller cannot steer the verdict) | none |
@@ -142,19 +317,76 @@ served from the repository.
 | `refund_missing` | anyone, 24 h after the report | none |
 | `settle_stale` | anyone, 24 h after a dispute with no stored verdict | none |
 
-A payable call that is refused refunds what it took in the same transaction and returns
-`{"ok": false, "reason": …}`; it never raises.
+A payable call that is refused (`list_pack`, `buy`, `open_dispute`) refunds what it took in the
+same transaction and returns `{"ok": false, "reason": …}`, with `"returned"` on `list_pack` and
+`buy`; it never raises.
 
-## Evidence
+Where the money goes:
 
-Signed on 23 and 24 September 2026 on GenLayer Studio (chain 61999) by two accounts, **A** the
-seller and **B** the buyer; each transaction below names them on the explorer. The calls marked
+| outcome | to the buyer | to the seller | the listing's stake |
+|---|---|---|---|
+| `breaks`, by the validators or by rule | price + bond + one slice | nothing | one slice less |
+| `keeps` | nothing | price + bond | untouched |
+| `unclear` | bond | price | untouched |
+| `released`, no dispute in the window | nothing | price | untouched |
+| `refunded`, a reported section never revealed | price + one slice | nothing | one slice less |
+| `settled_stale`, no verdict 24 h after a dispute | bond | price | untouched |
+| `close_listing` with no order open | | the whole stake | 0 |
+| `withdraw_stake` | | what is left | 0 |
+
+## Evidence for version 2
+
+Run on 5 October 2026 on GenLayer Studio (chain 61999) by `tests/on_chain/smoke.mjs`, which
+deploys its own register from `contracts/as_described.py` and signs from three throwaway keys:
+a seller, a buyer and a stranger for the calls only a stranger should be refused. **86 checks
+passed, 0 failed**; the whole log is `tests/on_chain/smoke-v2.log`. Register
+[`0xE31e77984bce5623AB50c7CB5530a030B9173718`](https://explorer-studio.genlayer.com/address/0xE31e77984bce5623AB50c7CB5530a030B9173718),
+whose `gen_getContractCode` hashes to the repository file
+(`1b46d8babe20e105cc86f82d3ebdc3612bb7f67570d906a175800212a1cb3adf`). Every payout was read from
+the balances before and after finalisation, and every final order was checked for the sentence
+the contract wrote. The calls that are new in version 2:
+
+| call | transaction | result |
+|---|---|---|
+| deploy the version 2 register | [0x0563fede…](https://explorer-studio.genlayer.com/tx/0x0563fede73c2ee1b8e6a4719a78464e7b078624bde9575eb9ce1976ef453859e) | `0xE31e7798…3718`, code byte-identical to the repository |
+| a stake below one slice (half the price) is refused | [0xdb1ef0eb…](https://explorer-studio.genlayer.com/tx/0xdb1ef0ebf53188506a405db8e5f7a19ad97a4aa7ebd8eb35e7bb853feee33d61) | `ok: false`, the stake came back in the same call |
+| list pack 1 with the minimum stake, one slice | [0x29ffc29d…](https://explorer-studio.genlayer.com/tx/0x29ffc29d03f23a61b78e04a1eb520b11589edab399f2012e61f1d37737cb104a) | L1: stake 0.5 GEN, slice 0.5 GEN, capacity 1 |
+| buy pack 1 | [0x55fddf56…](https://explorer-studio.genlayer.com/tx/0x55fddf56730793a75f99ec1e050532be1b728a3a7aa7e4d5f3311250498d2991) | O1, 1 GEN in escrow |
+| dispute recipe 5 against "every recipe is vegetarian" | [0x94d509da…](https://explorer-studio.genlayer.com/tx/0x94d509da3515bb055b82b7f79b3bac1f4105f52678c8ad975e973841abd186fa) | bond 0.2 GEN |
+| judge: the validators read recipe 5 | [0x90d85c2b…](https://explorer-studio.genlayer.com/tx/0x90d85c2be17b89a798d32efba4e5de3ee5ba4a14830d5601bfea27d33a4da272) | `breaks`, 3 agree; the buyer got **1.7 GEN**: price, bond and one 0.5 GEN slice of the seller's stake; L1 had no slice left and **closed itself** (`out_of_stake`) |
+| buy pack 1 again | [0x02592b6d…](https://explorer-studio.genlayer.com/tx/0x02592b6d6218d42319e0cd1baba66315484aeb0c9849587955331aa8c0941c3b) | refused, the listing is out of stake; the price came back |
+| close pack 4 while its order is open | [0xc314a48e…](https://explorer-studio.genlayer.com/tx/0xc314a48ed6ebd5b807e9ed9b43d87b88a7f4f099afe17f080a086c14f997cba6) | closed, the stake stays behind the open order |
+| withdraw_stake while that order is open | [0xea3350a1…](https://explorer-studio.genlayer.com/tx/0xea3350a1478d8d75155ef19c8e8c5deb3f406b3539d2c6809dfe71b1d2e38072) | refused: the stake still backs 1 open order |
+| judge the 12,283-character section | [0x207c3d9c…](https://explorer-studio.genlayer.com/tx/0x207c3d9c476cb123e150c07cac8ef7b678588b665855994a6f3adc62c2ef0962) | `breaks` by rule, no model asked; price, bond and one slice to the buyer |
+| withdraw_stake once the order has ended | [0x3116aec6…](https://explorer-studio.genlayer.com/tx/0x3116aec6022b8bd6508bf17bacbb8a7f6e1067d302889fdd6e56d47c3f44acf9) | what was left of the stake went back to the seller |
+| judge recipe 3 against "30 minutes or less" | [0x8bdc41d8…](https://explorer-studio.genlayer.com/tx/0x8bdc41d89f8a61dfdb5a3ad17eb31e93d89941a64ee6056c50a8c54a09226865) | `keeps`, 3 agree; the seller got 1.2 GEN; **the stake untouched** |
+| close pack 2 with nothing open | [0xdf4a1628…](https://explorer-studio.genlayer.com/tx/0xdf4a1628d1734f310c5cc64fa042ce566a3fbd4470d8aac7cb6c6814c2f5279e) | the whole stake came back in the same call |
+| a third order on pack 3 while two are open | [0xc400e2e8…](https://explorer-studio.genlayer.com/tx/0xc400e2e88e196e5b370f9a9ca07f74af08248327a80ca03ce449009331a7e9b4) | refused: "this listing's stake backs 2 open orders at a time and all 2 are taken"; the price came back |
+| release pack 3's order after its 5-minute window | [0x6aab47ab…](https://explorer-studio.genlayer.com/tx/0x6aab47ab6fad48095c8cf3ca3ea8da7e9d37e3745eb02f94693f412f994364e4) | the seller got 0.5 GEN; the stake untouched |
+| close pack 3 with an order still open | [0x67d75781…](https://explorer-studio.genlayer.com/tx/0x67d75781283bdfab17ab93d25fdc180e9bf9a919db6fc8eeaad77c043891484a) | closed by the seller, 0.5 GEN still held behind 1 open order |
+
+At the end the seller's public record, read with `seller()`, counted exactly what the run did
+(listed 4, sold 5, released 1, kept 1, broken 2, unclear 0), `staked` (0.5 GEN) and `stake_paid`
+(0.75 GEN) were the sums over that seller's listings, `stats()` agreed over every listing, and an
+address that never listed answered `known: false` with zeros. Everything version 1 proved (the
+hash checks, both framings, withdraw_dispute, the missing → reveal walk and its cap, release
+before and after the deadline, listings and ledger paging) ran again on this register and passed.
+
+After the run, eight demo packs were listed from one demo seller key with a stake of twenty
+slices each (ten times the price), so twenty buyers at a time can try each one: L5 to L12, the
+shop's demo packs, beginning with the vegetarian recipe pack whose recipe 5 breaks a promise.
+
+## Evidence for version 1
+
+These calls ran on the accepted version 1 register, before stakes existed, so no payout below
+carries a slice. Signed on 23 and 24 September 2026 on GenLayer Studio (chain 61999) by two
+accounts, **A** the seller and **B** the buyer; each transaction below names them on the explorer. The calls marked
 "anyone" or "a third key" were sent from a throwaway key, because the contract lets anyone make
 them; that is the point of those rows. Register
 [`0x197478dA434994220368cE3e32179B9409f1509D`](https://explorer-studio.genlayer.com/address/0x197478dA434994220368cE3e32179B9409f1509D).
-`gen_getContractCode` on it returns the bytes of `contracts/as_described.py` (sha256
-`eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803`), which is also the file served
-at `/contracts/as_described.py`, and `genvm-lint` passes on the code read back from the chain.
+`gen_getContractCode` on it returns the bytes of `contracts/as_described.py` at commit `11aeb18`
+(sha256 `eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803`), and `genvm-lint` passes
+on the code read back from the chain.
 
 43 calls in all. Every payout was checked against the balances before and after, and every one moved
 the exact amount the rule names.
@@ -227,6 +459,21 @@ against a throwaway register with the same bytes, and 12 browser steps with 14 m
   past it.
 - A verdict is what independent runs agreed on, not a truth about the section. Which model the
   validators run is not a fact the contract knows.
+- A listing takes at most `stake ÷ slice` open orders at a time. When every slice is taken, a
+  buy is refused, with the price returned, until an order ends; a seller who wants more buyers at
+  once stakes more.
+- A broken promise costs the seller one slice per verdict, not the whole stake: the buyer gets at
+  most the price, the bond and one slice. `unclear`, `keeps`, `settle_stale` and `release` never
+  touch the stake, so it pays only for a broken promise proven on chain or a section the seller
+  could not produce.
+- A stake left on a closed listing stays in the contract until the seller takes it back: in
+  `close_listing`'s own call when no order is open, otherwise with `withdraw_stake` once the last
+  order has ended. Nothing returns it on its own, nobody but the seller can take it back, and
+  there is no partial withdrawal.
+- The seller record is per address. A seller can start again from a new address, and that
+  address starts with an empty record and a recent `first_listed`, which is what the page shows.
+- The card, the badge and the JSON show only the site's own register, and an answer may be up to
+  a minute old (ten minutes, marked stale, while Studio is busy).
 - Studio is a test network. Transfers land a few seconds after finalization, and the site says
   so instead of showing a balance that has not moved yet.
 

@@ -11,6 +11,13 @@ the evidence. The validators then answer one closed question, twice, in two
 framings, and the contract moves the money by the combined word: breaks,
 keeps or unclear. The verdict is final and settles in the same call.
 
+The seller carries risk too. A listing is backed by a stake the seller sends
+with it, in slices of half the price: each open order holds one slice, a
+broken promise (or a reported section the seller never revealed) pays that
+slice to the buyer on top of the refund, and a listing whose stake can no
+longer back an order closes itself. Every seller's record is public: what
+they listed, sold, kept and broke, and what their stakes have paid out.
+
 What crosses consensus is one token from a closed set of three. The prose of
 the promise and of the section never does, and neither reaches the model
 unfenced. The sentence that explains each final outcome is written by the
@@ -50,6 +57,7 @@ MIN_WINDOW = 300                # seconds; the seller sets the dispute window pe
 MAX_WINDOW = 30 * 86400
 BOND_PERCENT = 20               # of the price, posted by the buyer with a dispute
 MIN_BOND = 10 ** 16             # 0.01 GEN
+STAKE_SLICE_PERCENT = 50        # of the price: one slice of the seller's stake backs one open order
 REVEAL_HOURS = 24               # the seller's time to reveal a section the buyer reported missing
 STALE_HOURS = 24                # a dispute with no stored verdict after this may be settled by rule
 MAX_ARG_CHARS = 200             # view arguments
@@ -68,6 +76,8 @@ STATUS_RELEASED = "released"          # the window passed with no dispute; the s
 STATUS_MISSING = "missing"            # the buyer says a section never arrived; the seller has 24 hours
 STATUS_REFUNDED = "refunded"          # the seller never revealed; the buyer was paid back
 STATUS_SETTLED_STALE = "settled_stale"  # a dispute nobody judged in 24 hours: price to the seller, bond to the buyer
+CLOSED_BY_SELLER = "seller"           # closed_reason: the seller called close_listing
+CLOSED_OUT_OF_STAKE = "out_of_stake"  # closed_reason: a slash left less than one slice
 
 ZERO = "0x0000000000000000000000000000000000000000"
 
@@ -124,6 +134,17 @@ def _digits(raw: str) -> int:
     if not s or len(s) > 40 or any(ch not in "0123456789" for ch in s):
         return -1
     return int(s)
+
+
+def _no_fraction(raw: str) -> typing.NoReturn:
+    """The json.loads hook for caller JSON: a number with a fraction or an exponent, or NaN or
+    Infinity, makes the whole input unreadable before a float is ever built.
+
+    Floats trap the VM in deterministic mode (see _instant_seconds), and a trap
+    is not an exception: the readers' except would never see it, and a payable
+    call would die holding the value. A ValueError they do catch, and refund.
+    """
+    raise ValueError("a number with a fraction or an exponent")
 
 
 def _valid_hash(raw: typing.Any) -> bool:
@@ -294,6 +315,11 @@ def _bond_for_price(price: int) -> int:
     return bond if bond > MIN_BOND else MIN_BOND
 
 
+def _slice_for_price(price: int) -> int:
+    """One slice of a seller's stake: what one open order holds, and what a broken promise pays the buyer."""
+    return price * STAKE_SLICE_PERCENT // 100
+
+
 def _gen_text(atto: int) -> str:
     """An exact amount in GEN, integers only: 1200000000000000000 -> "1.2 GEN"."""
     whole, frac = atto // ATTO_PER_GEN, atto % ATTO_PER_GEN
@@ -302,21 +328,25 @@ def _gen_text(atto: int) -> str:
 
 
 def _verdict_line(status: str, verdict: str, section_no: int, promise_no: int, missing_no: int,
-                  to_buyer: int, to_seller: int, oversize: bool) -> str:
+                  to_buyer: int, to_seller: int, oversize: bool, from_stake: int) -> str:
     """The sentence stored with a final order, from closed tokens only.
 
     Numbers, the verdict word and the amounts: nothing a seller or a buyer
     wrote, and nothing the model wrote, so it can be shown as the contract's
-    own words. "" for a status that is not final.
+    own words. "" for a status that is not final. `from_stake` is the slice
+    of the seller's stake paid to the buyer, and is named whenever it is not 0.
     """
     s, p = str(int(section_no)), str(int(promise_no))
+    got_back = "the price and the bond back"
+    if from_stake > 0:
+        got_back = "the price, the bond and one slice of the seller's stake (" + _gen_text(from_stake) + ") back"
     if status == STATUS_SETTLED and verdict == "breaks" and oversize:
         return ("Section " + s + " is longer than the " + str(MAX_SECTION_CHARS) + " characters a section may have, "
                 "so the dispute was settled as breaks by rule, without asking the validators: "
-                "the buyer got the price and the bond back, " + _gen_text(to_buyer) + ".")
+                "the buyer got " + got_back + ", " + _gen_text(to_buyer) + ".")
     if status == STATUS_SETTLED and verdict == "breaks":
         return ("A majority of the validators found that section " + s + " breaks promise " + p
-                + ", so the buyer got the price and the bond back: " + _gen_text(to_buyer) + ".")
+                + ", so the buyer got " + got_back + ": " + _gen_text(to_buyer) + ".")
     if status == STATUS_SETTLED and verdict == "keeps":
         return ("A majority of the validators found that section " + s + " keeps promise " + p
                 + ", so the seller got the price and the bond: " + _gen_text(to_seller) + ".")
@@ -335,7 +365,8 @@ def _verdict_line(status: str, verdict: str, section_no: int, promise_no: int, m
         return "The dispute window closed with no dispute, so the seller got the price: " + _gen_text(to_seller) + "."
     if status == STATUS_REFUNDED:
         return ("Section " + str(int(missing_no)) + " was reported missing and not revealed within " + str(REVEAL_HOURS)
-                + " hours, so the buyer got the full price back: " + _gen_text(to_buyer) + ".")
+                + " hours, so the buyer got the full price back"
+                + (" plus one slice of the seller's stake" if from_stake > 0 else "") + ": " + _gen_text(to_buyer) + ".")
     return ""
 
 
@@ -359,6 +390,11 @@ class Listing:
     kept: u32
     broken: u32
     unclear: u32
+    stake: u256             # what is left of the seller's stake; always at least open_orders * slice
+    slice: u256             # STAKE_SLICE_PERCENT of the price, fixed at listing time
+    open_orders: u32        # orders that are paid, disputed or missing: each one holds a slice
+    stake_paid: u256        # slices this listing's stake has paid to buyers, in total
+    closed_reason: str      # "" while open; CLOSED_BY_SELLER or CLOSED_OUT_OF_STAKE
 
 
 @allow_storage
@@ -390,6 +426,25 @@ class Order:
     paid_seller: u256
     settled_by: Address
     verdict_line: str       # the contract's sentence for a final status, from closed tokens; "" before that
+    paid_from_stake: u256   # the slice of the seller's stake paid to the buyer; part of paid_buyer, 0 unless slashed
+
+
+@allow_storage
+@dataclass
+class SellerRecord:
+    """One seller's public record across every listing, in scalars only (a DynArray here kills the VM)."""
+
+    listed: u32
+    sold: u32
+    released: u32
+    kept: u32
+    broken: u32
+    unclear: u32
+    refunded: u32
+    stale: u32
+    staked: u256            # held now, across every listing of this seller
+    stake_paid: u256        # paid to buyers from this seller's stakes, in total
+    first_listed: str
 
 
 class AsDescribed(gl.Contract):
@@ -409,6 +464,11 @@ class AsDescribed(gl.Contract):
     refunded_total: u32
     released_total: u32
     stale_total: u32
+    sellers: TreeMap[str, SellerRecord]     # lowercase hex address -> the seller's record
+    listings_by_seller: TreeMap[str, str]   # lowercase hex address -> JSON list of listing ids
+    seller_count: u32
+    stake_held_total: u256                  # every listing's remaining stake, summed
+    stake_paid_total: u256                  # every slice paid to a buyer, summed
 
     def __init__(self) -> None:
         self.listing_count = u32(0)
@@ -419,43 +479,90 @@ class AsDescribed(gl.Contract):
         self.refunded_total = u32(0)
         self.released_total = u32(0)
         self.stale_total = u32(0)
+        self.seller_count = u32(0)
+        self.stake_held_total = u256(0)
+        self.stake_paid_total = u256(0)
 
     # ------------------------------------------------------------ listing
 
-    @gl.public.write
+    @gl.public.write.payable
     def list_pack(self, title: str, kind: str, promises_json: str, hashes_json: str,
                   price_atto: str, window_seconds: str) -> str:
-        """List a pack. The sender becomes the seller. Nothing is taken, so refusals raise."""
+        """List a pack. The sender becomes the seller, and the value sent is the listing's stake.
+
+        The stake is at least one slice (STAKE_SLICE_PERCENT of the price). Each
+        open order holds one slice, so the listing takes stake // slice open
+        orders at a time, and a broken promise pays one slice to its buyer.
+        Never raises after taking value: a refused payable call strands what
+        was sent, so every refusal below refunds first and then says why.
+        """
+        value = gl.message.value
         sender = gl.message.sender_address
-        title = title.strip()
-        kind = kind.strip().lower()
-        if len(title) < MIN_TITLE or len(title) > MAX_TITLE:
-            _fail("a title is " + str(MIN_TITLE) + " to " + str(MAX_TITLE) + " characters")
-        if kind not in KINDS:
-            _fail("the kind must be one of: " + ", ".join(KINDS))
-        promises = self._read_promises(promises_json)
-        hashes = self._read_hashes(hashes_json)
+        title = title.strip() if isinstance(title, str) else ""     # calldata is not type-checked
+        kind = kind.strip().lower() if isinstance(kind, str) else ""
+        promises, promises_problem = self._read_promises(promises_json)
+        hashes, hashes_problem = self._read_hashes(hashes_json)
         price = _digits(price_atto)
-        if price < MIN_PRICE or price > MAX_PRICE:
-            _fail("the price is a whole number of atto between " + str(MIN_PRICE) + " (0.1 GEN) and " + str(MAX_PRICE) + " (1000 GEN)")
         window = _digits(window_seconds)
-        if window < MIN_WINDOW or window > MAX_WINDOW:
-            _fail("the dispute window is a whole number of seconds between " + str(MIN_WINDOW) + " (5 minutes) and " + str(MAX_WINDOW) + " (30 days)")
+        slice_ = _slice_for_price(price)
+        problem = ""
+        if len(title) < MIN_TITLE or len(title) > MAX_TITLE:
+            problem = "a title is " + str(MIN_TITLE) + " to " + str(MAX_TITLE) + " characters"
+        elif kind not in KINDS:
+            problem = "the kind must be one of: " + ", ".join(KINDS)
+        elif promises_problem:
+            problem = promises_problem
+        elif hashes_problem:
+            problem = hashes_problem
+        elif price < MIN_PRICE or price > MAX_PRICE:
+            problem = "the price is a whole number of atto between " + str(MIN_PRICE) + " (0.1 GEN) and " + str(MAX_PRICE) + " (1000 GEN)"
+        elif window < MIN_WINDOW or window > MAX_WINDOW:
+            problem = "the dispute window is a whole number of seconds between " + str(MIN_WINDOW) + " (5 minutes) and " + str(MAX_WINDOW) + " (30 days)"
+        elif int(value) < slice_:
+            problem = ("send a stake of at least one slice, " + str(STAKE_SLICE_PERCENT) + "% of the price: " + str(slice_)
+                       + " atto; each slice backs one open order")
+        if problem:
+            if value > u256(0):
+                _Payee(sender).emit_transfer(value=value)
+            return json.dumps({"ok": False, "reason": problem + "; your funds were returned", "returned": str(int(value))})
+        stake = int(value)
+        now = _now()
         self.listing_count = u32(int(self.listing_count) + 1)
         listing_id = "L" + str(int(self.listing_count))
         self.listings_by_id[listing_id] = Listing(
             seller=sender, title=title, kind=kind, promises_json=json.dumps(promises), hashes_json=json.dumps(hashes),
-            price=u256(price), window_seconds=u32(window), created_at=_now(), open=True,
+            price=u256(price), window_seconds=u32(window), created_at=now, open=True,
             orders=u32(0), kept=u32(0), broken=u32(0), unclear=u32(0),
+            stake=u256(stake), slice=u256(slice_), open_orders=u32(0), stake_paid=u256(0), closed_reason="",
         )
         self.listing_id_list.append(listing_id)
         self.orders_by_listing[listing_id] = "[]"
+        key = _hex(sender).lower()
+        if key not in self.sellers:
+            self.sellers[key] = SellerRecord(
+                listed=u32(0), sold=u32(0), released=u32(0), kept=u32(0), broken=u32(0), unclear=u32(0),
+                refunded=u32(0), stale=u32(0), staked=u256(0), stake_paid=u256(0), first_listed="",
+            )
+            self.seller_count = u32(int(self.seller_count) + 1)
+        record = self.sellers[key]
+        record.listed = u32(int(record.listed) + 1)
+        record.staked = u256(int(record.staked) + stake)
+        if not record.first_listed:
+            record.first_listed = now
+        self._index(self.listings_by_seller, key, listing_id)
+        self.stake_held_total = u256(int(self.stake_held_total) + stake)
         return json.dumps({"ok": True, "listing": listing_id, "sections": len(hashes), "promises": len(promises),
-                           "price": str(price), "window_seconds": window})
+                           "price": str(price), "window_seconds": window, "stake": str(stake), "slice": str(slice_),
+                           "capacity": stake // slice_})
 
     @gl.public.write
     def close_listing(self, listing_id: str) -> str:
-        """The seller stops new orders. Existing orders continue to their end."""
+        """The seller stops new orders. Existing orders continue to their end, each still backed by its slice.
+
+        With no order open the whole stake goes back to the seller in the same
+        call; otherwise it stays, and withdraw_stake returns what is left once
+        the last order has ended.
+        """
         listing_id = listing_id.strip()
         listing = self._listing(listing_id)
         if gl.message.sender_address != listing.seller:
@@ -463,7 +570,28 @@ class AsDescribed(gl.Contract):
         if not listing.open:
             _fail("this listing is already closed")
         listing.open = False
-        return json.dumps({"ok": True, "listing": listing_id, "open": False})
+        listing.closed_reason = CLOSED_BY_SELLER
+        returned = 0
+        if int(listing.open_orders) == 0:
+            returned = self._return_stake(listing)
+        return json.dumps({"ok": True, "listing": listing_id, "open": False, "returned": str(returned),
+                           "open_orders": int(listing.open_orders)})
+
+    @gl.public.write
+    def withdraw_stake(self, listing_id: str) -> str:
+        """The seller takes back what is left of the stake of a closed listing with no open order."""
+        listing_id = listing_id.strip()
+        listing = self._listing(listing_id)
+        if gl.message.sender_address != listing.seller:
+            _fail("only the seller withdraws a listing's stake")
+        if listing.open:
+            _fail("close the listing first: an open listing's stake backs the orders it may still take")
+        if int(listing.open_orders) > 0:
+            _fail("the stake still backs " + str(int(listing.open_orders)) + " open order(s); it comes back when the last one ends")
+        if int(listing.stake) == 0:
+            _fail("this listing has no stake left to withdraw")
+        returned = self._return_stake(listing)
+        return json.dumps({"ok": True, "listing": listing_id, "returned": str(returned)})
 
     # ------------------------------------------------------------- buying
 
@@ -471,15 +599,18 @@ class AsDescribed(gl.Contract):
     def buy(self, listing_id: str) -> str:
         """Pay the price into escrow. The sender becomes the buyer.
 
+        The order holds one slice of the listing's stake until it ends, so a
+        listing whose stake already backs as many open orders as it can refuses.
         Never raises after taking value: a refused payable call strands what
         was sent, so every refusal below refunds first and then says why.
         """
         value = gl.message.value
         sender = gl.message.sender_address
-        listing_id = listing_id.strip()
+        listing_id = listing_id.strip() if isinstance(listing_id, str) else ""
         now = _now()
         now_seconds = _instant_seconds(now)
         listing = self.listings_by_id[listing_id] if listing_id in self.listings_by_id else None
+        capacity = self._capacity(listing) if listing is not None else 0
         problem = ""
         if listing is None:
             problem = "no listing named " + listing_id[:MAX_ARG_CHARS]
@@ -487,6 +618,9 @@ class AsDescribed(gl.Contract):
             problem = "this listing is closed"
         elif sender == listing.seller:
             problem = "a seller does not buy their own pack"
+        elif int(listing.open_orders) >= capacity:
+            problem = ("this listing's stake backs " + str(capacity) + " open orders at a time and all "
+                       + str(capacity) + " are taken; try again when one ends")
         elif int(value) != int(listing.price):
             problem = "send exactly the price: " + str(int(listing.price)) + " atto"
         elif now_seconds < 0:
@@ -494,7 +628,7 @@ class AsDescribed(gl.Contract):
         if problem:
             if value > u256(0):
                 _Payee(sender).emit_transfer(value=value)
-            return json.dumps({"ok": False, "reason": problem + "; your funds were returned"})
+            return json.dumps({"ok": False, "reason": problem + "; your funds were returned", "returned": str(int(value))})
         deadline = now_seconds + int(listing.window_seconds)
         self.order_count = u32(int(self.order_count) + 1)
         order_id = "O" + str(int(self.order_count))
@@ -505,9 +639,13 @@ class AsDescribed(gl.Contract):
             verdict="", judged_at="", judgments=u32(0), revealed_text="", revealed_mask=u32(0),
             missing_reports=u32(0), missing_index=u32(0),
             missing_at="", paid_buyer=u256(0), paid_seller=u256(0), settled_by=Address(ZERO), verdict_line="",
+            paid_from_stake=u256(0),
         )
         self.order_id_list.append(order_id)
         listing.orders = u32(int(listing.orders) + 1)
+        listing.open_orders = u32(int(listing.open_orders) + 1)
+        record = self._seller_record(listing.seller)
+        record.sold = u32(int(record.sold) + 1)
         self._index(self.orders_by_listing, listing_id, order_id)
         self._index(self.orders_by_buyer, _hex(sender).lower(), order_id)
         return json.dumps({"ok": True, "order": order_id, "listing": listing_id, "price": str(int(value)),
@@ -526,7 +664,7 @@ class AsDescribed(gl.Contract):
         """
         value = gl.message.value
         sender = gl.message.sender_address
-        order_id = order_id.strip()
+        order_id = order_id.strip() if isinstance(order_id, str) else ""
         now = _now()
         now_seconds = _instant_seconds(now)
         order = self.orders[order_id] if order_id in self.orders else None
@@ -603,6 +741,7 @@ class AsDescribed(gl.Contract):
         so the caller cannot steer the verdict, and an open call lets a stuck
         buyer, the seller or the site retry after a round with no majority.
         This is the call that costs consensus, and it settles in the same call.
+        A breaks verdict also pays the buyer one slice of the listing's stake.
 
         The hash is checked before the length: a text that matches the
         commitment but is longer than MAX_SECTION_CHARS proves the seller
@@ -639,23 +778,29 @@ class AsDescribed(gl.Contract):
         order.revealed_text = section_text
         price = int(order.price)
         bond = int(order.bond)
+        record = self._seller_record(listing.seller)
+        from_stake = 0      # only a broken promise costs the seller stake: keeps and unclear leave it where it is
         if verdict == "breaks":
-            to_buyer, to_seller = price + bond, 0
+            from_stake = self._slash(order)
+            to_buyer, to_seller = price + bond + from_stake, 0
             listing.broken = u32(int(listing.broken) + 1)
+            record.broken = u32(int(record.broken) + 1)
             self.broken_total = u32(int(self.broken_total) + 1)
         elif verdict == "keeps":
             to_buyer, to_seller = 0, price + bond
             listing.kept = u32(int(listing.kept) + 1)
+            record.kept = u32(int(record.kept) + 1)
             self.kept_total = u32(int(self.kept_total) + 1)
         else:
             to_buyer, to_seller = bond, price
             listing.unclear = u32(int(listing.unclear) + 1)
+            record.unclear = u32(int(record.unclear) + 1)
             self.unclear_total = u32(int(self.unclear_total) + 1)
-        self._pay(order, to_buyer, to_seller, STATUS_SETTLED, oversize)
+        self._pay(order, to_buyer, to_seller, STATUS_SETTLED, oversize, from_stake)
         return json.dumps({"ok": True, "order": order_id, "verdict": verdict, "break_answer": first, "keep_answer": second,
                            "by_rule": oversize, "section_index": section, "promise_index": promise,
-                           "to_buyer": str(to_buyer), "to_seller": str(to_seller), "status": STATUS_SETTLED,
-                           "verdict_line": str(order.verdict_line)})
+                           "to_buyer": str(to_buyer), "to_seller": str(to_seller), "paid_from_stake": str(from_stake),
+                           "status": STATUS_SETTLED, "verdict_line": str(order.verdict_line)})
 
     @gl.public.write
     def settle_stale(self, order_id: str) -> str:
@@ -678,6 +823,8 @@ class AsDescribed(gl.Contract):
         if now_seconds < since + STALE_HOURS * 3600:
             _fail("a dispute may be settled by rule " + str(STALE_HOURS) + " hours after it was opened; judge it instead")
         self.stale_total = u32(int(self.stale_total) + 1)
+        record = self._seller_record(order.seller)
+        record.stale = u32(int(record.stale) + 1)
         to_buyer, to_seller = int(order.bond), int(order.price)
         self._pay(order, to_buyer, to_seller, STATUS_SETTLED_STALE)
         return json.dumps({"ok": True, "order": order_id, "status": STATUS_SETTLED_STALE,
@@ -703,6 +850,8 @@ class AsDescribed(gl.Contract):
         if now_seconds < int(order.deadline_seconds):
             _fail("the dispute window is open until " + str(order.deadline_at))
         self.released_total = u32(int(self.released_total) + 1)
+        record = self._seller_record(order.seller)
+        record.released = u32(int(record.released) + 1)
         to_seller = int(order.price)
         self._pay(order, 0, to_seller, STATUS_RELEASED)
         return json.dumps({"ok": True, "order": order_id, "status": STATUS_RELEASED, "to_seller": str(to_seller),
@@ -794,6 +943,9 @@ class AsDescribed(gl.Contract):
     def refund_missing(self, order_id: str) -> str:
         """The seller never revealed: the whole price goes back to the buyer, no model. Anybody may call.
 
+        A section the seller committed to and could not produce is a broken
+        promise of its own, so one slice of the stake goes to the buyer with it.
+
         Open on purpose: the outcome is fixed by rule and by the clock, so the
         caller decides nothing; an open call means the buyer is refunded even
         if nobody else acts.
@@ -809,10 +961,13 @@ class AsDescribed(gl.Contract):
         if now_seconds < since + REVEAL_HOURS * 3600:
             _fail("the seller has " + str(REVEAL_HOURS) + " hours from the report to reveal the section")
         self.refunded_total = u32(int(self.refunded_total) + 1)
-        to_buyer = int(order.price)
-        self._pay(order, to_buyer, 0, STATUS_REFUNDED)
+        record = self._seller_record(order.seller)
+        record.refunded = u32(int(record.refunded) + 1)
+        from_stake = self._slash(order)
+        to_buyer = int(order.price) + from_stake
+        self._pay(order, to_buyer, 0, STATUS_REFUNDED, False, from_stake)
         return json.dumps({"ok": True, "order": order_id, "status": STATUS_REFUNDED, "to_buyer": str(to_buyer),
-                           "verdict_line": str(order.verdict_line)})
+                           "paid_from_stake": str(from_stake), "verdict_line": str(order.verdict_line)})
 
     # ----------------------------------------------------------------- views
 
@@ -900,6 +1055,7 @@ class AsDescribed(gl.Contract):
                 "status": str(o.status), "verdict": str(o.verdict),
                 "section_index": int(o.section_index), "promise_index": int(o.promise_index),
                 "judged_at": str(o.judged_at), "paid_buyer": str(int(o.paid_buyer)), "paid_seller": str(int(o.paid_seller)),
+                "paid_from_stake": str(int(o.paid_from_stake)),
             })
             i -= 1
         return json.dumps(rows)
@@ -910,6 +1066,25 @@ class AsDescribed(gl.Contract):
             "listings": int(self.listing_count), "orders": int(self.order_count),
             "kept": int(self.kept_total), "broken": int(self.broken_total), "unclear": int(self.unclear_total),
             "refunded": int(self.refunded_total), "released": int(self.released_total), "stale": int(self.stale_total),
+            "stake_held": str(int(self.stake_held_total)), "stake_paid": str(int(self.stake_paid_total)),
+            "sellers": int(self.seller_count),
+        })
+
+    @gl.public.view
+    def seller(self, address_hex: str) -> str:
+        """One seller's public record: every listing, every outcome, and what their stakes hold and have paid."""
+        key = address_hex.strip()[:MAX_ARG_CHARS].lower()
+        if key not in self.sellers:
+            return json.dumps({"seller": key, "known": False, "listings": [], "listed": 0, "sold": 0, "released": 0,
+                               "kept": 0, "broken": 0, "unclear": 0, "refunded": 0, "stale": 0,
+                               "staked": "0", "stake_paid": "0", "first_listed": ""})
+        r = self.sellers[key]
+        listing_ids = json.loads(str(self.listings_by_seller[key])) if key in self.listings_by_seller else []
+        return json.dumps({
+            "seller": key, "known": True, "listings": listing_ids,
+            "listed": int(r.listed), "sold": int(r.sold), "released": int(r.released), "kept": int(r.kept),
+            "broken": int(r.broken), "unclear": int(r.unclear), "refunded": int(r.refunded), "stale": int(r.stale),
+            "staked": str(int(r.staked)), "stake_paid": str(int(r.stake_paid)), "first_listed": str(r.first_listed),
         })
 
     @gl.public.view
@@ -935,20 +1110,28 @@ class AsDescribed(gl.Contract):
             "price_atto": [str(MIN_PRICE), str(MAX_PRICE)],
             "window_seconds": [MIN_WINDOW, MAX_WINDOW],
             "bond": "the buyer posts " + str(BOND_PERCENT) + "% of the price with a dispute, at least " + str(MIN_BOND) + " atto",
+            "stake": "the seller sends a stake with list_pack, at least one slice; each open order (paid, disputed or missing) holds one slice, so a listing takes at most stake // slice open orders at a time",
+            "slice_percent": STAKE_SLICE_PERCENT,
+            "slice": "one slice is " + str(STAKE_SLICE_PERCENT) + "% of the price, fixed when the pack is listed",
+            "slash": "a breaks verdict, by the validators or by rule, and a reported section the seller never revealed each move one slice from the listing's stake to the buyer; keeps, unclear, release and settled_stale never touch the stake",
+            "out_of_stake": "a listing whose stake falls below one slice after a slash closes itself",
+            "stake_back": "close_listing returns the whole stake in the same call when no order is open; otherwise withdraw_stake returns what is left once the listing is closed and its last order has ended",
             "reveal_hours": REVEAL_HOURS,
             "stale_hours": STALE_HOURS,
             "indices": "section_index and promise_index count from 0",
             "money": {
-                "breaks": "price and bond to the buyer",
+                "breaks": "price and bond to the buyer, plus one slice of the seller's stake",
                 "keeps": "price and bond to the seller",
                 "unclear": "price to the seller, bond back to the buyer",
                 "released": "price to the seller after the window with no dispute",
-                "refunded": "price to the buyer when a reported section was not revealed in " + str(REVEAL_HOURS) + " hours",
+                "refunded": "price to the buyer, plus one slice of the seller's stake, when a reported section was not revealed in " + str(REVEAL_HOURS) + " hours",
                 "settled_stale": "price to the seller and bond to the buyer when a dispute had no verdict for " + str(STALE_HOURS) + " hours",
-                "oversize": "price and bond to the buyer, by rule and with no model, when the disputed section matches its hash but is longer than " + str(MAX_SECTION_CHARS) + " characters",
+                "oversize": "price and bond to the buyer, plus one slice of the seller's stake, by rule and with no model, when the disputed section matches its hash but is longer than " + str(MAX_SECTION_CHARS) + " characters",
             },
             "who": {
-                "list_pack": "anyone, becomes the seller", "close_listing": "the seller",
+                "list_pack": "anyone, with a stake of at least one slice; becomes the seller",
+                "close_listing": "the seller; the stake comes back in the same call when no order is open",
+                "withdraw_stake": "the seller, once the listing is closed and no order is open",
                 "buy": "anyone but the seller, with exactly the price; becomes the buyer",
                 "open_dispute": "the buyer, before the deadline, with exactly the bond",
                 "withdraw_dispute": "the buyer, while the dispute has no verdict; the bond comes back and the order returns to paid with its deadline unchanged",
@@ -983,51 +1166,101 @@ class AsDescribed(gl.Contract):
     def _promise_count(self, listing_id: str) -> int:
         return len(json.loads(str(self.listings_by_id[listing_id].promises_json)))
 
-    def _index(self, table: typing.Any, key: str, order_id: str) -> None:
+    def _index(self, table: typing.Any, key: str, item_id: str) -> None:
         current = json.loads(str(table[key])) if key in table else []
-        current.append(order_id)
+        current.append(item_id)
         table[key] = json.dumps(current)
 
-    def _read_promises(self, promises_json: str) -> typing.List[str]:
+    def _read_promises(self, promises_json: str) -> typing.Tuple[typing.List[str], str]:
+        """The promises, normalised, and ""; or no promises and why. A refusal, never a raise:
+        list_pack has already taken the stake when this runs."""
         try:
-            raw = json.loads(promises_json)
+            raw = json.loads(promises_json, parse_float=_no_fraction, parse_constant=_no_fraction)
         except Exception:
             raw = None
         if not isinstance(raw, list) or len(raw) < MIN_PROMISES or len(raw) > MAX_PROMISES:
-            _fail("promises are a JSON list of " + str(MIN_PROMISES) + " to " + str(MAX_PROMISES) + " sentences")
+            return [], "promises are a JSON list of " + str(MIN_PROMISES) + " to " + str(MAX_PROMISES) + " sentences"
         promises = []
         for item in raw:
             text = str(item).strip() if isinstance(item, str) else ""
             if len(text) < MIN_PROMISE_CHARS or len(text) > MAX_PROMISE_CHARS:
-                _fail("each promise is " + str(MIN_PROMISE_CHARS) + " to " + str(MAX_PROMISE_CHARS) + " characters")
+                return [], "each promise is " + str(MIN_PROMISE_CHARS) + " to " + str(MAX_PROMISE_CHARS) + " characters"
             if text.splitlines() != [text]:
-                _fail("each promise is one line, with no line breaks")
+                return [], "each promise is one line, with no line breaks"
             promises.append(text)
-        return promises
+        return promises, ""
 
-    def _read_hashes(self, hashes_json: str) -> typing.List[str]:
+    def _read_hashes(self, hashes_json: str) -> typing.Tuple[typing.List[str], str]:
+        """The section hashes and ""; or no hashes and why. A refusal, never a raise, like _read_promises."""
         try:
-            raw = json.loads(hashes_json)
+            raw = json.loads(hashes_json, parse_float=_no_fraction, parse_constant=_no_fraction)
         except Exception:
             raw = None
         if not isinstance(raw, list) or len(raw) < MIN_SECTIONS or len(raw) > MAX_SECTIONS:
-            _fail("hashes are a JSON list of " + str(MIN_SECTIONS) + " to " + str(MAX_SECTIONS) + " section hashes")
+            return [], "hashes are a JSON list of " + str(MIN_SECTIONS) + " to " + str(MAX_SECTIONS) + " section hashes"
         for item in raw:
             if not _valid_hash(item):
-                _fail("each hash is the sha256 of one section: 64 lowercase hex characters")
-        return [str(x) for x in raw]
+                return [], "each hash is the sha256 of one section: 64 lowercase hex characters"
+        return [str(x) for x in raw], ""
 
     def _listing_row(self, listing_id: str) -> typing.Dict[str, typing.Any]:
         l = self.listings_by_id[listing_id]
         promises = json.loads(str(l.promises_json))
         hashes = json.loads(str(l.hashes_json))
+        capacity = self._capacity(l)
+        free = capacity - int(l.open_orders)
         return {
             "listing": listing_id, "seller": _hex(l.seller), "title": str(l.title), "kind": str(l.kind),
             "promises": promises, "hashes": hashes, "section_count": len(hashes),
             "price": str(int(l.price)), "window_seconds": int(l.window_seconds), "created_at": str(l.created_at),
             "open": bool(l.open), "orders": int(l.orders), "kept": int(l.kept), "broken": int(l.broken),
             "unclear": int(l.unclear), "bond": str(_bond_for_price(int(l.price))),
+            "stake": str(int(l.stake)), "slice": str(int(l.slice)), "open_orders": int(l.open_orders),
+            "capacity": capacity, "free": free if free > 0 else 0, "stake_paid": str(int(l.stake_paid)),
+            "closed_reason": str(l.closed_reason),
         }
+
+    def _capacity(self, listing: Listing) -> int:
+        """How many open orders the listing's stake backs at once: one slice each."""
+        slice_ = int(listing.slice)
+        return int(listing.stake) // slice_ if slice_ > 0 else 0
+
+    def _seller_record(self, address: typing.Any) -> SellerRecord:
+        return self.sellers[_hex(address).lower()]
+
+    def _slash(self, order: Order) -> int:
+        """One slice of the listing's stake, taken for the buyer of an order the seller failed. Returns the amount.
+
+        The order is still open here, so the stake backs it in full and the
+        min never bites; it is there so a slash can never take what is not held.
+        A listing left with less than one slice can back no order, so an open
+        one closes itself; one the seller already closed keeps its reason.
+        """
+        listing = self.listings_by_id[str(order.listing)]
+        stake, slice_ = int(listing.stake), int(listing.slice)
+        taken = slice_ if slice_ < stake else stake
+        listing.stake = u256(stake - taken)
+        listing.stake_paid = u256(int(listing.stake_paid) + taken)
+        record = self._seller_record(listing.seller)
+        record.staked = u256(int(record.staked) - taken)
+        record.stake_paid = u256(int(record.stake_paid) + taken)
+        self.stake_held_total = u256(int(self.stake_held_total) - taken)
+        self.stake_paid_total = u256(int(self.stake_paid_total) + taken)
+        if int(listing.stake) < slice_ and listing.open:
+            listing.open = False
+            listing.closed_reason = CLOSED_OUT_OF_STAKE
+        return taken
+
+    def _return_stake(self, listing: Listing) -> int:
+        """Everything left of a listing's stake back to its seller. Callers check that no order still holds a slice."""
+        amount = int(listing.stake)
+        if amount > 0:
+            _Payee(listing.seller).emit_transfer(value=u256(amount))
+        listing.stake = u256(0)
+        record = self._seller_record(listing.seller)
+        record.staked = u256(int(record.staked) - amount)
+        self.stake_held_total = u256(int(self.stake_held_total) - amount)
+        return amount
 
     def _order_row(self, order_id: str) -> typing.Dict[str, typing.Any]:
         o = self.orders[order_id]
@@ -1042,7 +1275,7 @@ class AsDescribed(gl.Contract):
             "missing_reports": int(o.missing_reports), "missing_reports_left": MAX_MISSING_REPORTS - int(o.missing_reports),
             "missing_index": int(o.missing_index), "missing_at": str(o.missing_at),
             "paid_buyer": str(int(o.paid_buyer)), "paid_seller": str(int(o.paid_seller)), "settled_by": _hex(o.settled_by),
-            "verdict_line": str(o.verdict_line),
+            "verdict_line": str(o.verdict_line), "paid_from_stake": str(int(o.paid_from_stake)),
         }
 
     def _revealed(self, order_id: str, mask: int) -> typing.List[typing.Dict[str, typing.Any]]:
@@ -1059,19 +1292,28 @@ class AsDescribed(gl.Contract):
                 rows.append({"index": i, "text": str(self.reveals[key]) if key in self.reveals else ""})
         return rows
 
-    def _pay(self, order: Order, to_buyer: int, to_seller: int, status: str, oversize: bool = False) -> None:
-        """The single exit for money: every terminal path goes through here, and so does its sentence."""
+    def _pay(self, order: Order, to_buyer: int, to_seller: int, status: str, oversize: bool = False,
+             from_stake: int = 0) -> None:
+        """The single exit for money: every terminal path goes through here, and so does its sentence.
+
+        `to_buyer` already includes `from_stake`, the slice _slash took, so the
+        buyer gets one transfer. The order is final after this, so it stops
+        holding a slice of the listing's stake.
+        """
         if to_buyer > 0:
             _Payee(order.buyer).emit_transfer(value=u256(to_buyer))
         if to_seller > 0:
             _Payee(order.seller).emit_transfer(value=u256(to_seller))
         order.paid_buyer = u256(to_buyer)
         order.paid_seller = u256(to_seller)
+        order.paid_from_stake = u256(from_stake)
         order.bond = u256(0)
         order.status = status
         order.settled_by = gl.message.sender_address
+        listing = self.listings_by_id[str(order.listing)]
+        listing.open_orders = u32(int(listing.open_orders) - 1)
         order.verdict_line = _verdict_line(status, str(order.verdict), int(order.section_index) + 1, int(order.promise_index) + 1,
-                                           int(order.missing_index) + 1, to_buyer, to_seller, oversize)
+                                           int(order.missing_index) + 1, to_buyer, to_seller, oversize, from_stake)
 
     def _ask(self, promise_text: str, promise_no: int, promise_total: int,
              section_text: str, section_no: int, section_total: int) -> typing.Tuple[str, str, str]:

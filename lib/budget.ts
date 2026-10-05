@@ -35,12 +35,35 @@ export const CHECKS_PER_MINUTE = 60;
 export const LOOKUPS_PER_CALLER = 3;
 export const LOOKUPS_PER_MINUTE = 8;
 
+/**
+ * Listing reads the public routes (the embed card, the badge, the listing JSON) may start in a
+ * minute: per caller, and for the whole instance.
+ *
+ * Other sites' visitors call these, with no wallet and no signature, and one read is up to two
+ * view calls (the listing and its seller's record) out of the same 30 gen_call a minute the
+ * delivery routes need. Every answer is reused for a minute (lib/public-listing.ts), so honest
+ * traffic, even a page with several cards on it, reads rarely; what these ceilings stop is a loop
+ * over made-up listing ids, each of which would otherwise be a fresh read.
+ */
+export const PUBLIC_READS_PER_CALLER = 6;
+export const PUBLIC_READS_PER_MINUTE = 10;
+
+/**
+ * How old the register's listing count may be before an id above it has the count read again
+ * (lib/public-listing.ts). An id above the count is answered "no such listing" from the count,
+ * with no read and nothing taken from the budgets above, so a loop over made-up ids costs one
+ * stats() call per this long at most, however many ids it asks for. Short, so a listing made a
+ * moment ago is found within seconds.
+ */
+export const LISTING_COUNT_RECHECK_MS = 10_000;
+
 /** How many callers one server instance keeps a count for; past that the oldest is dropped. */
 export const MAX_CALLERS = 2000;
 
 export const TOO_MANY_READS = "too many pack requests from this address in the last minute; try again shortly";
 export const TOO_MANY_CHECKS = "too many delivery checks from this address in the last minute; try again shortly";
 export const TOO_MANY_LOOKUPS = "the site checked many new registers in the last minute; try again in a minute";
+export const TOO_MANY_PUBLIC_READS = "this site read many listings for other sites in the last minute; try again in a minute";
 
 /** The key a budget is kept under when no header names the caller. */
 export const SHARED_CALLER = "all";
@@ -58,7 +81,7 @@ export const SHARED_CALLER = "all";
  * The routes that have a verified signer key their budget on that address instead, so the shared
  * bucket only ever limits requests nobody has signed.
  */
-export function callerOf(req: Request): string {
+export function callerOf(req: { headers: { get(name: string): string | null } }): string {
   const direct = (req.headers.get("x-vercel-forwarded-for") || req.headers.get("x-real-ip") || "").trim();
   if (direct) return direct.slice(0, 64);
   const parts = (req.headers.get("x-forwarded-for") || "").split(",");
@@ -91,6 +114,8 @@ const readTimes = new Map<string, number[]>();
 const checkTimes = new Map<string, number[]>();
 const lookupTimes = new Map<string, number[]>();
 let instanceLookups: number[] = [];
+const publicTimes = new Map<string, number[]>();
+let instancePublicReads: number[] = [];
 
 /**
  * True when this caller may spend another chain read here, and counts it.
@@ -117,6 +142,25 @@ export function takeLookup(caller: string, now: number = Date.now()): boolean {
   if (!takeFrom(lookupTimes, caller, LOOKUPS_PER_CALLER, now)) return false;
   instanceLookups.push(now);
   return true;
+}
+
+/** True when this caller may start one more public listing read here, and counts it. */
+export function takePublicRead(caller: string, now: number = Date.now()): boolean {
+  instancePublicReads = instancePublicReads.filter((t) => now - t < 60_000);
+  if (instancePublicReads.length >= PUBLIC_READS_PER_MINUTE) return false;
+  if (!takeFrom(publicTimes, caller, PUBLIC_READS_PER_CALLER, now)) return false;
+  instancePublicReads.push(now);
+  return true;
+}
+
+/**
+ * True when `id` cannot name a listing on a register that holds `count`. The contract names its
+ * listings L1, L2, … in order and never removes one, so an id above the count, or one it never
+ * writes (L0, or a number with a leading zero), is "no such listing" without asking the chain.
+ */
+export function beyondListings(id: string, count: number): boolean {
+  const m = /^L([1-9]\d*)$/.exec(id);
+  return !m || Number(m[1]) > count;
 }
 
 /**

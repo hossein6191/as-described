@@ -21,6 +21,8 @@ export type BuyCardProps = {
   gate?: React.ReactNode;
   /** anything under the button: the tx rail, an error, the link to the order */
   children?: React.ReactNode;
+  /** more lines of the summary under the bond, e.g. the seller's stake behind the pack */
+  rows?: { term: string; value: React.ReactNode; note?: string }[];
   className?: string;
 };
 
@@ -36,6 +38,7 @@ export function BuyCard({
   busy,
   gate,
   children,
+  rows,
   className,
 }: BuyCardProps) {
   return (
@@ -73,6 +76,15 @@ export function BuyCard({
                 <span className="block text-xs text-muted-foreground">you lose it only on a keeps verdict</span>
               </dd>
             </div>
+            {(rows ?? []).map((r) => (
+              <div key={r.term} className="flex items-start justify-between gap-3">
+                <dt className="text-muted-foreground">{r.term}</dt>
+                <dd className="text-right">
+                  {r.value}
+                  {r.note ? <span className="block text-xs text-muted-foreground">{r.note}</span> : null}
+                </dd>
+              </div>
+            ))}
           </dl>
 
           <div className="mt-6">

@@ -13,15 +13,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useTx, failureOf, cleanWalletError } from "@/components/use-tx";
 import { useWallet } from "@/components/wallet";
 import { WalletGate } from "@/components/wallet-gate";
-import { isMock, readListing } from "@/lib/chain";
+import { isMock, listPackCall, outcomeOf, readListing, readStats, sliceOf } from "@/lib/chain";
 import { forgetPackStatus, manifestOf, sha256Hex, storageStatus, uploadMessage, uploadPack, type StorageStatus } from "@/lib/api";
 import { mockStorePack } from "@/lib/chain-mock";
 import { useRead, useSearchString } from "@/components/use-read";
 import { demoKeys, demoSectionsFor } from "@/lib/demo-keys";
-import { BlockSkeleton, ReadBlock } from "@/components/read-state";
+import { BlockSkeleton, ReadBlock, ReadError } from "@/components/read-state";
 import { YourRegisterNotice } from "@/components/register-line";
 import { DEMO_PACKS, PROMISE_TEMPLATES, WORLD_KNOWLEDGE_WORDS } from "@/lib/demo-packs";
-import { gen, kindEmoji, toAtto } from "@/lib/format";
+import { gen, genExact, kindEmoji, toAtto } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // The contract's limits (docs/CONTRACTS.md, "Constants"). The form refuses what the contract would refuse.
@@ -32,6 +32,17 @@ const MIN_SECTIONS = 1, MAX_SECTIONS = 12, MAX_SECTION_CHARS = 4000;
 /** Characters as the contract counts them (code points), not the UTF-16 code units String.length counts. */
 const charCount = (text: string) => Array.from(text).length;
 const MIN_PRICE = 10n ** 17n, MAX_PRICE = 1000n * 10n ** 18n;
+/** The stake the form suggests, in slices: two slices are the price. */
+const DEFAULT_SLICES = 2n;
+const STAKE_CHIPS = [1n, 2n, 4n];
+/** A price the form can read, or null while the field is not a price yet. */
+const priceOrNull = (text: string): bigint | null => {
+  try {
+    return toAtto(text);
+  } catch {
+    return null;
+  }
+};
 const WINDOWS = [
   { value: "300", label: "5 minutes" },
   { value: "3600", label: "1 hour" },
@@ -81,6 +92,9 @@ export default function SellPage() {
   const [promises, setPromises] = React.useState<string[]>([""]);
   const [sections, setSections] = React.useState<string[]>([""]);
   const [priceGen, setPriceGen] = React.useState("1");
+  // The stake follows the price (two slices) until the seller types one of their own.
+  const [stakeGen, setStakeGen] = React.useState("");
+  const [stakeAuto, setStakeAuto] = React.useState(true);
   const [windowSeconds, setWindowSeconds] = React.useState("259200");
   const [hashes, setHashes] = React.useState<string[]>([]);
   const [step, setStep] = React.useState<Step>("form");
@@ -100,6 +114,20 @@ export default function SellPage() {
       alive = false;
     };
   }, []);
+  // A register deployed before stakes has a list_pack that takes no value: it is listed without one.
+  // null until stats() has answered: a stake sent to that older list_pack makes the call raise,
+  // and a raised call keeps the value, so List waits for the answer and never guesses.
+  const regStats = useRead(() => readStats(), []);
+  const stakesOn: boolean | null = regStats.data ? regStats.data.stakeKnown : null;
+  // The stake fields stay on screen while the answer is pending; only a register without stakes hides them.
+  const stakeForm = stakesOn !== false;
+  const priceAtto = priceOrNull(priceGen);
+  const sliceAtto = priceAtto !== null ? sliceOf(priceAtto) : null;
+  const stakeText = stakeAuto ? (priceAtto !== null ? genExact((sliceAtto ?? 0n) * DEFAULT_SLICES) : "") : stakeGen;
+  const stakeAtto = priceOrNull(stakeText);
+  const capacity = stakeAtto !== null && sliceAtto ? stakeAtto / sliceAtto : 0n;
+  // The wallet must cover the stake (Studio charges no gas). Mock mode has no wallet; its write refuses instead.
+  const shortOfStake = stakeForm && !isMock && !!w.address && stakeAtto !== null && w.balanceAtto < stakeAtto;
   const isDemo = keys.includes(hashes.join(","));
   const storageBlocked = !isMock && !!storage && !storage.available && !isDemo;
   // Read inside the tx callback below, which is created once.
@@ -119,7 +147,7 @@ export default function SellPage() {
     };
   }, [sections]);
 
-  const problems = React.useMemo(() => {
+  const formProblems = React.useMemo(() => {
     const p: string[] = [];
     const t = title.trim();
     if (t.length < MIN_TITLE || t.length > MAX_TITLE) p.push(`Title: ${MIN_TITLE} to ${MAX_TITLE} characters.`);
@@ -143,6 +171,15 @@ export default function SellPage() {
     }
     return p;
   }, [title, kind, promises, sections, priceGen]);
+  // The stake is checked as the contract checks it: at least one slice of the price.
+  const stakeProblem = !stakeForm
+    ? ""
+    : stakeAtto === null
+      ? "Stake: enter an amount like 1 or 0.5."
+      : sliceAtto !== null && stakeAtto < sliceAtto
+        ? `Stake: at least one slice, ${gen(sliceAtto)} (half the price).`
+        : "";
+  const problems = stakeProblem ? [...formProblems, stakeProblem] : formProblems;
 
   const warnings = React.useMemo(
     () =>
@@ -177,26 +214,26 @@ export default function SellPage() {
     setPromises([...d.promises]);
     setSections([...d.sections]);
     setPriceGen(d.priceGen);
+    // a demo pack is listed with the suggested stake: two slices, which is its price
+    setStakeAuto(true);
+    setStakeGen("");
     setWindowSeconds(String(d.windowSeconds));
     setSubmitted(false);
   };
 
   const list = async () => {
     setSubmitted(true);
-    if (problems.length || storageBlocked) return;
+    if (problems.length || storageBlocked || shortOfStake || stakesOn === null) return;
     setListingId(null);
     setUploadError("");
     setStep("listing");
     const hs = await Promise.all(sections.map(sha256Hex));
     setHashes(hs);
-    const h = await tx.start("list_pack", [
-      title.trim(),
-      kind,
-      JSON.stringify(promises.map((x) => x.trim())),
-      JSON.stringify(hs),
-      toAtto(priceGen).toString(),
-      windowSeconds,
-    ]);
+    const call = listPackCall(
+      { title: title.trim(), kind, promises: promises.map((x) => x.trim()), hashes: hs, priceAtto: toAtto(priceGen), windowSeconds },
+      stakesOn === true ? stakeAtto : null,
+    );
+    const h = await tx.start(call.fn, call.args, call.value);
     if (!h) setStep("form");
   };
 
@@ -225,6 +262,8 @@ export default function SellPage() {
   };
 
   const listingFailed = tx.final ? failureOf(tx.final) : "";
+  // A refused list_pack sends the stake back in the same call and says how much.
+  const returnedAtto = BigInt(outcomeOf(tx.final?.result)?.returnedAtto ?? "0");
   const busy = step === "listing" && (tx.sending || (!!tx.hash && !tx.final));
 
   if (resumeId) return <ResumeUpload id={resumeId} storage={storage} />;
@@ -433,6 +472,67 @@ export default function SellPage() {
               </div>
             </div>
 
+            {stakeForm ? (
+              <section className="space-y-3 rounded-xl border bg-card p-4">
+                <div className="grid gap-4 sm:grid-cols-[200px_1fr] sm:items-start">
+                  <div className="space-y-2">
+                    <Label htmlFor="stake">Your stake (GEN)</Label>
+                    <Input
+                      id="stake"
+                      inputMode="decimal"
+                      value={stakeText}
+                      onChange={(e) => {
+                        setStakeAuto(false);
+                        setStakeGen(e.target.value);
+                      }}
+                      placeholder={sliceAtto !== null ? genExact(sliceAtto * DEFAULT_SLICES) : "1"}
+                    />
+                    {sliceAtto ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {STAKE_CHIPS.map((n) => (
+                          <button
+                            key={String(n)}
+                            type="button"
+                            className="rounded-full border bg-background px-2.5 py-0.5 text-[11px] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            onClick={() => {
+                              setStakeAuto(n === DEFAULT_SLICES);
+                              setStakeGen(genExact(sliceAtto * n));
+                            }}
+                          >
+                            {String(n)} {n === 1n ? "slice" : "slices"}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1.5 text-xs text-muted-foreground">
+                    <p className="text-sm text-foreground">
+                      Money behind your promises. It leaves your wallet with the listing and the contract holds it.
+                    </p>
+                    <ul className="list-disc space-y-1 pl-4">
+                      <li>
+                        Each broken promise pays the buyer one slice of it, half the price
+                        {sliceAtto !== null ? ` (${gen(sliceAtto)})` : ""}, on top of their refund. So does a section a buyer
+                        reports missing that you never reveal.
+                      </li>
+                      <li>
+                        It backs {capacity > 0n ? <strong className="text-foreground">{String(capacity)} open {capacity === 1n ? "order" : "orders"}</strong> : "open orders"} at
+                        a time (stake ÷ slice). While every slice is taken, nobody else can buy; buying opens again when an order ends.
+                      </li>
+                      <li>
+                        A slash that leaves less than one slice closes the listing. Close it yourself when nothing is open and the rest
+                        comes straight back; with orders open, withdraw it once they end.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+                This register was deployed before stakes, so a pack is listed here with no stake behind it.
+              </p>
+            )}
+
             {submitted && problems.length ? (
               <ul className="space-y-1 rounded-lg border border-breaks/40 bg-breaks/10 p-3 text-xs">
                 {problems.map((m) => (
@@ -447,7 +547,7 @@ export default function SellPage() {
           <div className="rounded-2xl border bg-card p-5">
             <h2 className="font-semibold">Publish</h2>
             <ol className="mt-3 space-y-3 text-sm">
-              <StepRow n={1} label="Sign list_pack" hint="Title, promises and hashes go on chain." state={step === "form" ? "todo" : step === "listing" ? "busy" : "done"} />
+              <StepRow n={1} label="Sign list_pack" hint={stakeForm ? "Title, promises and hashes go on chain, and your stake goes into the contract." : "Title, promises and hashes go on chain."} state={step === "form" ? "todo" : step === "listing" ? "busy" : "done"} />
               <StepRow n={2} label={isDemo ? "Upload: nothing to do" : "Sign the upload"} hint={isDemo ? "A demo pack's text ships with the site, so buyers can read it as soon as it is listed." : "The section text goes to the delivery store, bound to the listing."} state={step === "upload" ? (uploading ? "busy" : "todo") : step === "done" ? "done" : "todo"} />
             </ol>
 
@@ -455,14 +555,30 @@ export default function SellPage() {
               {step === "form" ? (
                 <WalletGate action="list a pack">
                   <StorageNote storage={storage} isDemo={isDemo} />
-                  <Button type="button" variant="cool" size="lg" className="w-full" onClick={() => void list()} disabled={busy || storageBlocked}>
-                    List for {(() => {
-                      try {
-                        return gen(toAtto(priceGen));
-                      } catch {
-                        return "…";
-                      }
-                    })()}
+                  {shortOfStake && stakeAtto !== null ? (
+                    <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
+                      <AlertTriangle className="mr-1 inline size-3.5 text-gold" />
+                      This wallet holds {gen(w.balanceAtto)} and the stake is {gen(stakeAtto)}. Lower the stake (one slice is the least) or
+                      get 10 test GEN from the wallet menu.
+                    </p>
+                  ) : null}
+                  {stakesOn === null ? (
+                    regStats.error ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">
+                          List waits for the register to answer: one deployed before stakes takes no stake, and a stake sent to it would not come back.
+                        </p>
+                        <ReadError onRetry={regStats.retry} detail={regStats.error} compact />
+                      </div>
+                    ) : (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3.5 shrink-0 animate-spin" /> Reading the register: List waits until it says whether it takes a stake.
+                      </p>
+                    )
+                  ) : null}
+                  <Button type="button" variant="cool" size="lg" className="h-auto min-h-10 w-full whitespace-normal py-2" onClick={() => void list()} disabled={busy || storageBlocked || shortOfStake || stakesOn === null}>
+                    List for {priceAtto !== null ? gen(priceAtto) : "…"}
+                    {stakeForm ? ` · stake ${stakeAtto !== null ? gen(stakeAtto) : "…"}` : ""}
                   </Button>
                   {submitted && problems.length ? <p className="text-xs text-breaks">Fix the {problems.length === 1 ? "problem" : "problems"} listed under the form.</p> : null}
                 </WalletGate>
@@ -475,6 +591,9 @@ export default function SellPage() {
                   {listingFailed ? (
                     <>
                       <p className="text-sm text-breaks">{listingFailed}</p>
+                      {returnedAtto > 0n ? (
+                        <p className="text-xs text-muted-foreground">Nothing was listed, and the {gen(returnedAtto)} you sent came back to your wallet in the same call.</p>
+                      ) : null}
                       <Button type="button" variant="outline" className="w-full" onClick={() => { tx.reset(); setStep("form"); }}>
                         Back to the form
                       </Button>
@@ -509,8 +628,15 @@ export default function SellPage() {
                     </li>
                     <li>
                       If a buyer reports a section missing, you have 24 hours to put its exact text on chain from the order page, or
-                      the buyer gets the full price back. My orders flags that too, with the deadline.
+                      the buyer gets the full price back{stakesOn ? ", plus one slice of your stake" : ""}. My orders flags that too, with the deadline.
                     </li>
+                    {stakesOn ? (
+                      <li>
+                        Your stake backs the open orders, one slice each. A breaks verdict, or a reported section you do not reveal,
+                        pays that slice to the buyer. Close the listing from My orders or your seller page when you are done: with
+                        nothing open the rest of the stake comes back at once.
+                      </li>
+                    ) : null}
                     <li>A seller cannot buy their own pack: to see a dispute from the buyer&apos;s side, buy it from a second wallet.</li>
                   </ul>
                   <Button asChild variant="cool" className="w-full">

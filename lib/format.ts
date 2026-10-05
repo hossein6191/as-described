@@ -25,6 +25,19 @@ export function gen(atto: string | bigint | number | null | undefined, unit = " 
   return (neg ? "-" : "") + out + unit;
 }
 
+/** An exact amount in GEN with no unit and no rounding, for an input field: 50000000000000000n -> "0.05". */
+export function genExact(atto: string | bigint): string {
+  let v: bigint;
+  try {
+    v = typeof atto === "bigint" ? atto : BigInt(String(atto).trim() || "0");
+  } catch {
+    return "0";
+  }
+  if (v < 0n) v = 0n;
+  const frac = (v % ATTO).toString().padStart(18, "0").replace(/0+$/, "");
+  return (v / ATTO).toString() + (frac ? "." + frac : "");
+}
+
 /** GEN → atto as a bigint. Accepts "1", "0.5", "1.25". Throws on junk. */
 export function toAtto(genText: string): bigint {
   const t = genText.trim();

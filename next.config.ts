@@ -16,7 +16,8 @@ const nextConfig: NextConfig = {
       {
         // No page of this site may be shown inside another site's frame: a hidden frame over a
         // decoy could otherwise steer a connected visitor's clicks onto Release or Post bond.
-        source: "/:path*",
+        // Every path but /embed/*, which has the rule below.
+        source: "/:path((?!embed(?:/|$)).*)",
         headers: [
           { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
           { key: "X-Frame-Options", value: "DENY" },
@@ -25,6 +26,17 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           // An order page is opened with ?tx=<hash>; a click through to the explorer must not
           // carry the whole URL, only the origin.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+      {
+        // The listing card other sites put in an iframe (app/embed/[id]). Any site may frame it,
+        // because there is nothing in it a hidden frame could steer: it renders no wallet, signs
+        // nothing, and its only controls are links that open this site in a new tab.
+        source: "/embed/:path*",
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors *" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },

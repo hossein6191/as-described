@@ -2,10 +2,18 @@
 // It follows the contract's rules closely enough for the pages to show every state: the
 // revealed sections, the verdict sentence the contract writes, and the refusals.
 //
+// Stakes follow the contract too: a listing's slice is half its price, its stake backs
+// stake ÷ slice open orders at a time, a breaks verdict or an unrevealed section pays one slice
+// to the buyer, and a listing left with less than one slice closes itself. The seeded state
+// shows each case: L1 paid a slice for O1, L3's only slot is taken by O6, L4 closed itself
+// out of stake when O7 was refunded, and L5 was closed while O8 was open, so its stake waits
+// for withdraw_stake. Seller records and the stake totals are added up from the
+// listings and orders on every read, so they cannot drift from them.
+//
 // The demo listings carry the REAL sha256 hashes of lib/demo-packs.ts, computed once with WebCrypto
 // on first read, so the order page's hash check shows the same ticks it would show against the chain.
 
-import type { LedgerRow, Listing, Order, ReadResult, Stats, TxStatus, WriteFn } from "./chain";
+import type { LedgerRow, Listing, Order, ReadResult, SellerRecord, Stats, TxStatus, WriteFn } from "./chain";
 import { DEMO_PACKS } from "./demo-packs";
 
 const GEN = 10n ** 18n;
@@ -18,6 +26,14 @@ const MAX_MISSING_REPORTS = 3;
 const REVEAL_HOURS = 24;
 const STALE_HOURS = 24;
 const LISTINGS_PAGE = 25;
+const MIN_TITLE = 3, MAX_TITLE = 60;
+const KINDS = ["recipes", "templates", "notes", "prompts", "guide", "other"];
+const MIN_PROMISES = 1, MAX_PROMISES = 6, MIN_PROMISE_CHARS = 8, MAX_PROMISE_CHARS = 160;
+const MIN_SECTIONS = 1, MAX_SECTIONS = 20;
+const MIN_PRICE = 10n ** 17n, MAX_PRICE = 1000n * GEN;
+const MIN_WINDOW = 300, MAX_WINDOW = 30 * 86400;
+/** One slice of the stake is this share of the price (the contract's STAKE_SLICE_PERCENT). */
+const STAKE_SLICE_PERCENT = 50n;
 
 /** An exact amount in GEN, like the contract's _gen_text: 1200000000000000000 -> "1.2 GEN". */
 const genText = (atto: bigint) => {
@@ -31,10 +47,14 @@ function verdictLineOf(o: Order, oversize = false): string {
   const p = String(o.promiseIndex + 1);
   const toBuyer = BigInt(o.paidBuyer);
   const toSeller = BigInt(o.paidSeller);
+  const fromStake = BigInt(o.paidFromStake || "0");
+  const back = fromStake > 0n
+    ? `the price, the bond and one slice of the seller's stake (${genText(fromStake)}) back`
+    : "the price and the bond back";
   if (o.status === "settled" && o.verdict === "breaks" && oversize)
-    return `Section ${s} is longer than the ${MAX_SECTION_CHARS} characters a section may have, so the dispute was settled as breaks by rule, without asking the validators: the buyer got the price and the bond back, ${genText(toBuyer)}.`;
+    return `Section ${s} is longer than the ${MAX_SECTION_CHARS} characters a section may have, so the dispute was settled as breaks by rule, without asking the validators: the buyer got ${back}, ${genText(toBuyer)}.`;
   if (o.status === "settled" && o.verdict === "breaks")
-    return `A majority of the validators found that section ${s} breaks promise ${p}, so the buyer got the price and the bond back: ${genText(toBuyer)}.`;
+    return `A majority of the validators found that section ${s} breaks promise ${p}, so the buyer got ${back}: ${genText(toBuyer)}.`;
   if (o.status === "settled" && o.verdict === "keeps")
     return `A majority of the validators found that section ${s} keeps promise ${p}, so the seller got the price and the bond: ${genText(toSeller)}.`;
   if (o.status === "settled" && o.verdict === "unclear")
@@ -43,6 +63,8 @@ function verdictLineOf(o: Order, oversize = false): string {
     return `No verdict was stored within ${STALE_HOURS} hours of the dispute on section ${s} against promise ${p}, so it was settled by rule: the seller got the price (${genText(toSeller)}) and the buyer got the bond back (${genText(toBuyer)}).`;
   if (o.status === "released")
     return `The dispute window closed with no dispute, so the seller got the price: ${genText(toSeller)}.`;
+  if (o.status === "refunded" && fromStake > 0n)
+    return `Section ${o.missingIndex + 1} was reported missing and not revealed within ${REVEAL_HOURS} hours, so the buyer got the full price back plus one slice of the seller's stake: ${genText(toBuyer)}.`;
   if (o.status === "refunded")
     return `Section ${o.missingIndex + 1} was reported missing and not revealed within ${REVEAL_HOURS} hours, so the buyer got the full price back: ${genText(toBuyer)}.`;
   return "";
@@ -70,6 +92,20 @@ const toAtto = (genText: string) => {
   return BigInt(w) * GEN + BigInt((f + "0".repeat(18)).slice(0, 18));
 };
 
+const sliceOf = (priceAtto: string | bigint) => (BigInt(priceAtto) * STAKE_SLICE_PERCENT) / 100n;
+
+/** A new listing's stake fields: `stake` held, nothing open, nothing paid out. recount() fills the counts. */
+const staked = (priceAtto: string | bigint, stake: bigint) => ({
+  stakeKnown: true,
+  stakeAtto: stake.toString(),
+  sliceAtto: sliceOf(priceAtto).toString(),
+  openOrders: 0,
+  capacity: 0,
+  free: 0,
+  stakePaidAtto: "0",
+  closedReason: "" as Listing["closedReason"],
+});
+
 const listings: Listing[] = DEMO_PACKS.map((p, i) => ({
   id: "L" + (i + 1),
   seller,
@@ -86,6 +122,8 @@ const listings: Listing[] = DEMO_PACKS.map((p, i) => ({
   kept: 0,
   broken: 0,
   unclear: 0,
+  // the sell page's default stake: two slices, which is the price
+  ...staked(toAtto(p.priceGen), sliceOf(toAtto(p.priceGen)) * 2n),
 }));
 
 /** Section texts per listing (the delivery API's store, in memory). */
@@ -131,6 +169,7 @@ const blankOrder = (id: string, l: Listing, who: string, openedAt: string): Orde
   missingReportsLeft: MAX_MISSING_REPORTS,
   paidBuyer: "0",
   paidSeller: "0",
+  paidFromStake: "0",
   windowOpen: true,
   bondRequiredAtto: bondOf(l.priceAtto),
   revealed: [],
@@ -140,9 +179,47 @@ const blankOrder = (id: string, l: Listing, who: string, openedAt: string): Orde
 });
 
 const orders: Order[] = [];
+
+const OPEN_STATUSES: Order["status"][] = ["paid", "disputed", "missing"];
+const big = (atto: string) => BigInt(atto || "0");
+
+/** A listing's open orders, capacity and free slots, from its stake and the orders as they stand. */
+function recount(l: Listing): Listing {
+  const slice = big(l.sliceAtto);
+  l.openOrders = orders.filter((o) => o.listing === l.id && OPEN_STATUSES.includes(o.status)).length;
+  l.capacity = slice > 0n ? Number(big(l.stakeAtto) / slice) : 0;
+  l.free = Math.max(0, l.capacity - l.openOrders);
+  return l;
+}
+
+/**
+ * One slice of `l`'s stake to its buyer, as the contract pays it on breaks and refund_missing:
+ * min(slice, stake) comes off the stake. The listing closes itself once less than a slice is
+ * left; the caller adds the amount to the buyer's payout in the same transfer.
+ */
+function slash(l: Listing): bigint {
+  const slice = big(l.sliceAtto);
+  const stake = big(l.stakeAtto);
+  const fromStake = slice < stake ? slice : stake;
+  l.stakeAtto = (stake - fromStake).toString();
+  l.stakePaidAtto = (big(l.stakePaidAtto) + fromStake).toString();
+  if (big(l.stakeAtto) < slice && l.open) {
+    l.open = false;
+    l.closedReason = "out_of_stake";
+  }
+  return fromStake;
+}
+
 {
-  // O1: pack 1, recipe 5 vs P1 → breaks → refund
+  // L1 was listed with four slices: O1 cost it one, and O3 holds another.
+  listings[0].stakeAtto = (sliceOf(listings[0].priceAtto) * 4n).toString();
+  // L3 and L4 were listed with the minimum, one slice each.
+  listings[2].stakeAtto = listings[2].sliceAtto;
+  listings[3].stakeAtto = listings[3].sliceAtto;
+
+  // O1: pack 1, recipe 5 vs P1 → breaks → refund, plus one slice of L1's stake
   const o1 = blankOrder("O1", listings[0], buyer, "2026-09-18T11:00:00.000Z");
+  const fromStake1 = slash(listings[0]);
   Object.assign(o1, {
     status: "settled",
     sectionIndex: 4,
@@ -153,7 +230,8 @@ const orders: Order[] = [];
     verdict: "breaks",
     judgedAt: "2026-09-18T11:12:00.000Z",
     revealedText: DEMO_PACKS[0].sections[4],
-    paidBuyer: (BigInt(o1.priceAtto) + BigInt(bondOf(o1.priceAtto))).toString(),
+    paidBuyer: (BigInt(o1.priceAtto) + BigInt(bondOf(o1.priceAtto)) + fromStake1).toString(),
+    paidFromStake: fromStake1.toString(),
     windowOpen: false,
   });
   // O2: pack 2, recipe 3 vs P2 → keeps → seller paid
@@ -184,13 +262,37 @@ const orders: Order[] = [];
     revealed: [{ index: 6, text: DEMO_PACKS[1].sections[6] }],
     missingReportsLeft: MAX_MISSING_REPORTS - 1,
   });
-  for (const o of [o1, o2, o4]) o.verdictLine = verdictLineOf(o);
-  orders.push(o1, o2, o3, o4, o5);
+  // O6: pack 3, a third buyer, fresh: L3's one slice backs it, so nobody else can buy L3 now
+  const o6 = blankOrder("O6", listings[2], "0x5c3e9a7d1b2f4e6a8c0d2e4f6a8b0c1d3e5f7a9b", now());
+  // O7: pack 4, section 2 reported missing and never revealed → full refund plus L4's only slice,
+  // which left L4 below one slice, so it closed itself
+  const o7 = blankOrder("O7", listings[3], buyer, "2026-09-19T09:00:00.000Z");
+  const fromStake7 = slash(listings[3]);
+  Object.assign(o7, {
+    status: "refunded",
+    missingIndex: 1,
+    missingAt: "2026-09-19T09:20:00.000Z",
+    missingReportsLeft: MAX_MISSING_REPORTS - 1,
+    paidBuyer: (BigInt(o7.priceAtto) + fromStake7).toString(),
+    paidFromStake: fromStake7.toString(),
+    windowOpen: false,
+  });
+  // O8: pack 5, closed by its seller while O8 was open; O8 was released later, so nothing is
+  // open and the whole stake is there to withdraw
+  const o8 = blankOrder("O8", listings[4], buyer, "2026-09-19T10:00:00.000Z");
+  Object.assign(o8, { status: "released", paidSeller: o8.priceAtto, windowOpen: false });
+  listings[4].open = false;
+  listings[4].closedReason = "seller";
+  for (const o of [o1, o2, o4, o7, o8]) o.verdictLine = verdictLineOf(o);
+  orders.push(o1, o2, o3, o4, o5, o6, o7, o8);
   listings[0].orders = 2;
   listings[0].broken = 1;
   listings[1].orders = 2;
   listings[1].kept = 1;
-  listings[2].orders = 1;
+  listings[2].orders = 2;
+  listings[3].orders = 1;
+  listings[4].orders = 1;
+  listings.forEach(recount);
 }
 
 const balances = new Map<string, bigint>([
@@ -206,12 +308,37 @@ const refreshWindow = (o: Order) => {
   return o;
 };
 
+/** One seller's record, added up from the listings and orders as they stand (the contract keeps the same counts). */
+function recordOf(address: string): SellerRecord {
+  const a = address.trim().toLowerCase();
+  const mine = listings.filter((l) => l.seller === a);
+  const sold = orders.filter((o) => o.seller === a);
+  const count = (pick: (o: Order) => boolean) => sold.filter(pick).length;
+  const sum = (pick: (l: Listing) => string) => mine.reduce((n, l) => n + big(pick(l)), 0n).toString();
+  return {
+    seller: a,
+    known: mine.length > 0,
+    listings: mine.map((l) => l.id),
+    listed: mine.length,
+    sold: sold.length,
+    released: count((o) => o.status === "released"),
+    kept: count((o) => o.status === "settled" && o.verdict === "keeps"),
+    broken: count((o) => o.status === "settled" && o.verdict === "breaks"),
+    unclear: count((o) => o.status === "settled" && o.verdict === "unclear"),
+    refunded: count((o) => o.status === "refunded"),
+    stale: count((o) => o.status === "settled_stale"),
+    stakedAtto: sum((l) => l.stakeAtto),
+    stakePaidAtto: sum((l) => l.stakePaidAtto),
+    firstListed: mine[0]?.createdAt ?? "",
+  };
+}
+
 export async function readListingIds(): Promise<ReadResult<string[]>> {
   await init();
   await delay(120);
   return chain(listings.map((l) => l.id));
 }
-const copyListing = (l: Listing): Listing => ({ ...l, promises: [...l.promises], hashes: [...l.hashes] });
+const copyListing = (l: Listing): Listing => ({ ...recount(l), promises: [...l.promises], hashes: [...l.hashes] });
 
 export async function readListing(id: string): Promise<ReadResult<Listing | null>> {
   await init();
@@ -262,6 +389,7 @@ export async function readLedger(count: number): Promise<ReadResult<LedgerRow[]>
 }
 export async function readStats(): Promise<ReadResult<Stats>> {
   await delay(80);
+  const total = (pick: (l: Listing) => string) => listings.reduce((n, l) => n + big(pick(l)), 0n).toString();
   return chain({
     listings: listings.length,
     orders: orders.length,
@@ -271,7 +399,15 @@ export async function readStats(): Promise<ReadResult<Stats>> {
     refunded: orders.filter((o) => o.status === "refunded").length,
     released: orders.filter((o) => o.status === "released").length,
     stale: orders.filter((o) => o.status === "settled_stale").length,
+    stakeKnown: true,
+    stakeHeldAtto: total((l) => l.stakeAtto),
+    stakePaidAtto: total((l) => l.stakePaidAtto),
+    sellers: new Set(listings.map((l) => l.seller)).size,
   });
+}
+export async function readSeller(address: string): Promise<ReadResult<SellerRecord | null>> {
+  await delay(80);
+  return chain(recordOf(address));
 }
 export async function readBondFor(listing: string): Promise<string> {
   const l = listings.find((x) => x.id === listing);
@@ -290,14 +426,54 @@ export function mockPackUploaded(listingId: string): boolean {
 }
 
 // ---- writes: a fake hash whose status advances on every poll, with a plausible state change ----
-// Two kinds of refusal, as on chain: a payable call returns {ok:false, reason} and refunds what
-// it took, anything else raises and the receipt carries the [EXPECTED] sentence.
+// Two kinds of refusal, as on chain: a payable call returns {ok:false, reason} and refunds what it
+// took (list_pack and buy also say how much, in `returned`), anything else raises and the receipt
+// carries the [EXPECTED] sentence.
 const pending = new Map<
   string,
   { fn: WriteFn; args: string[]; polls: number; result: Record<string, unknown>; error: string }
 >();
 
 const credit = (who: string, atto: bigint) => balances.set(who, (balances.get(who) ?? 0n) + atto);
+
+const HASH_RE = /^[0-9a-f]{64}$/;
+
+/** list_pack's checks, in the contract's order, as one sentence; "" when the listing is accepted. */
+function listProblem(args: string[], value: bigint): string {
+  const title = (args[0] ?? "").trim();
+  const kind = (args[1] ?? "").trim().toLowerCase();
+  if (title.length < MIN_TITLE || title.length > MAX_TITLE) return `a title is ${MIN_TITLE} to ${MAX_TITLE} characters`;
+  if (!KINDS.includes(kind)) return "the kind must be one of: " + KINDS.join(", ");
+  let promises: unknown;
+  try {
+    promises = JSON.parse(args[2] ?? "");
+  } catch {
+    promises = null;
+  }
+  if (!Array.isArray(promises) || promises.length < MIN_PROMISES || promises.length > MAX_PROMISES)
+    return `promises are a JSON list of ${MIN_PROMISES} to ${MAX_PROMISES} sentences`;
+  for (const p of promises) {
+    const t = typeof p === "string" ? p.trim() : "";
+    if (t.length < MIN_PROMISE_CHARS || t.length > MAX_PROMISE_CHARS) return `each promise is ${MIN_PROMISE_CHARS} to ${MAX_PROMISE_CHARS} characters`;
+    if (/[\r\n]/.test(t)) return "each promise is one line, with no line breaks";
+  }
+  let hashes: unknown;
+  try {
+    hashes = JSON.parse(args[3] ?? "");
+  } catch {
+    hashes = null;
+  }
+  if (!Array.isArray(hashes) || hashes.length < MIN_SECTIONS || hashes.length > MAX_SECTIONS)
+    return `hashes are a JSON list of ${MIN_SECTIONS} to ${MAX_SECTIONS} section hashes`;
+  if (hashes.some((h) => typeof h !== "string" || !HASH_RE.test(h))) return "each hash is the sha256 of one section: 64 lowercase hex characters";
+  const price = /^\d+$/.test(args[4] ?? "") ? BigInt(args[4]) : -1n;
+  if (price < MIN_PRICE || price > MAX_PRICE) return `the price is a whole number of atto between ${MIN_PRICE} (0.1 GEN) and ${MAX_PRICE} (1000 GEN)`;
+  const window = /^\d+$/.test(args[5] ?? "") ? Number(args[5]) : -1;
+  if (window < MIN_WINDOW || window > MAX_WINDOW) return `the dispute window is a whole number of seconds between ${MIN_WINDOW} (5 minutes) and ${MAX_WINDOW} (30 days)`;
+  const slice = sliceOf(price);
+  if (value < slice) return `send a stake of at least one slice, ${STAKE_SLICE_PERCENT}% of the price: ${slice} atto; each slice backs one open order`;
+  return "";
+}
 
 class Refused extends Error {}
 const refuse = (message: string): never => {
@@ -307,41 +483,73 @@ const refuse = (message: string): never => {
 export async function write(fn: WriteFn, args: string[], valueAtto?: bigint): Promise<string> {
   await init();
   await delay(300);
-  const hash = "0x" + fakeHash(fn + args.join("|") + String(valueAtto ?? 0n) + Date.now());
+  const value = valueAtto ?? 0n;
+  // The wallet refuses before anything is sent when the account cannot cover the value.
+  if (value > (balances.get(buyer) ?? 0n)) throw new Error("insufficient funds for transfer");
+  const hash = "0x" + fakeHash(fn + args.join("|") + String(value) + Date.now());
   let result: Record<string, unknown> = { ok: true };
   let error = "";
   const find = (id: string) => orders.find((x) => x.id === id);
   const listingOf = (o: Order) => listings.find((x) => x.id === o.listing);
-  const settle = (o: Order, toBuyer: bigint, toSeller: bigint, status: Order["status"], oversize = false) => {
+  const listingNamed = (id: string) => listings.find((x) => x.id === id) ?? refuse("no listing named " + id);
+  // Every refusal of a payable call sends the value back in the same call and says how much.
+  const refused = (reason: string) => ({ ok: false, reason: reason + "; your funds were returned", returned: value.toString() });
+  const settle = (o: Order, toBuyer: bigint, toSeller: bigint, status: Order["status"], oversize = false, fromStake = 0n) => {
     if (toBuyer > 0n) credit(o.buyer, toBuyer);
     if (toSeller > 0n) credit(o.seller, toSeller);
     o.paidBuyer = toBuyer.toString();
     o.paidSeller = toSeller.toString();
+    o.paidFromStake = fromStake.toString();
     o.bondAtto = "0";
     o.status = status;
     o.windowOpen = false;
     o.verdictLine = verdictLineOf(o, oversize);
+    const l = listingOf(o);
+    if (l) recount(l);
   };
 
   try {
   if (fn === "buy") {
+    // the contract's order: no listing, closed, own pack, every slice taken, then the price
     const l = listings.find((x) => x.id === args[0]);
-    if (!l) result = { ok: false, reason: "No such listing." };
-    else if (!l.open) result = { ok: false, reason: "This listing is closed." };
-    else if ((valueAtto ?? 0n) !== BigInt(l.priceAtto)) result = { ok: false, reason: "Send exactly the price. Your GEN was refunded." };
+    if (l) recount(l);
+    if (!l) result = refused("no listing named " + args[0]);
+    else if (!l.open) result = refused("this listing is closed");
+    else if (l.seller === buyer) result = refused("a seller does not buy their own pack");
+    else if (l.openOrders >= l.capacity) {
+      result = refused(`this listing's stake backs ${l.capacity} open orders at a time and all ${l.capacity} are taken; try again when one ends`);
+    } else if (value !== BigInt(l.priceAtto)) result = refused("send exactly the price: " + l.priceAtto + " atto");
     else {
       const id = "O" + (orders.length + 1);
       const o = blankOrder(id, l, buyer, now());
       orders.push(o);
       l.orders += 1;
-      result = { ok: true, order: id, deadline_at: o.deadlineAt };
+      recount(l);
+      result = { ok: true, order: id, listing: l.id, price: l.priceAtto, deadline_at: o.deadlineAt, status: "paid" };
     }
   } else if (fn === "close_listing") {
-    const l = listings.find((x) => x.id === args[0]);
-    if (l) {
-      l.open = false;
-      result = { ok: true, listing: l.id, open: false };
+    const l = recount(listingNamed(args[0]));
+    if (!l.open) refuse("this listing is already closed");
+    l.open = false;
+    l.closedReason = "seller";
+    // With nothing open the whole stake goes back now; otherwise it stays until withdraw_stake.
+    const returned = l.openOrders === 0 ? big(l.stakeAtto) : 0n;
+    if (returned > 0n) {
+      credit(l.seller, returned);
+      l.stakeAtto = "0";
     }
+    recount(l);
+    result = { ok: true, listing: l.id, open: false, returned: returned.toString(), open_orders: l.openOrders };
+  } else if (fn === "withdraw_stake") {
+    const l = recount(listingNamed(args[0]));
+    if (l.open) refuse("close the listing first: an open listing's stake backs the orders it may still take");
+    if (l.openOrders > 0) refuse(`the stake still backs ${l.openOrders} open order(s); it comes back when the last one ends`);
+    const returned = big(l.stakeAtto);
+    if (returned <= 0n) refuse("this listing has no stake left to withdraw");
+    credit(l.seller, returned);
+    l.stakeAtto = "0";
+    recount(l);
+    result = { ok: true, listing: l.id, returned: returned.toString() };
   } else if (fn === "open_dispute") {
     const o = find(args[0]);
     if (!o) result = { ok: false, reason: "No such order." };
@@ -376,14 +584,19 @@ export async function write(fn: WriteFn, args: string[], valueAtto?: bigint): Pr
       o.judgedAt = now();
       o.revealedText = text;
       const total = BigInt(o.priceAtto) + BigInt(o.bondAtto);
-      if (breaks) settle(o, total, 0n, "settled", oversize);
+      // breaks: one slice of the seller's stake goes to the buyer in the same transfer
+      const fromStake = breaks && l ? slash(l) : 0n;
+      if (breaks) settle(o, total + fromStake, 0n, "settled", oversize, fromStake);
       else settle(o, 0n, total, "settled");
       if (l) {
         if (breaks) l.broken += 1;
         else l.kept += 1;
       }
-      result = { ok: true, order: o.id, verdict: o.verdict, by_rule: oversize, status: "settled",
-        to_buyer: o.paidBuyer, to_seller: o.paidSeller, verdict_line: o.verdictLine };
+      result = { ok: true, order: o.id, verdict: o.verdict, by_rule: oversize,
+        // the two framings' answers that give the verdict; none when it was settled by rule
+        break_answer: oversize ? "" : breaks ? "yes" : "no", keep_answer: oversize ? "" : breaks ? "no" : "yes",
+        section_index: o.sectionIndex, promise_index: o.promiseIndex, to_buyer: o.paidBuyer, to_seller: o.paidSeller,
+        paid_from_stake: fromStake.toString(), status: "settled", verdict_line: o.verdictLine };
     }
   } else if (fn === "release") {
     const o = find(args[0]);
@@ -409,7 +622,8 @@ export async function write(fn: WriteFn, args: string[], valueAtto?: bigint): Pr
       o.missingIndex = section;
       o.missingAt = now();
       o.missingReportsLeft = (o.missingReportsLeft ?? MAX_MISSING_REPORTS) - 1;
-      result = { ok: true, order: o.id, status: "missing", missing_index: section, reports_left: o.missingReportsLeft, reveal_hours: REVEAL_HOURS };
+      result = { ok: true, order: o.id, status: "missing", missing_index: section,
+        missing_reports: MAX_MISSING_REPORTS - o.missingReportsLeft, reports_left: o.missingReportsLeft, reveal_hours: REVEAL_HOURS };
     }
   } else if (fn === "withdraw_dispute") {
     const o = find(args[0]);
@@ -444,8 +658,12 @@ export async function write(fn: WriteFn, args: string[], valueAtto?: bigint): Pr
     if (!o) refuse("no order named " + args[0]);
     else if (o.status !== "missing") refuse("nothing to refund: the order is " + o.status);
     else {
-      settle(o, BigInt(o.priceAtto), 0n, "refunded");
-      result = { ok: true, order: o.id, status: "refunded", to_buyer: o.paidBuyer, verdict_line: o.verdictLine };
+      // the seller never revealed: the price back, plus one slice of the seller's stake
+      const l = listingOf(o);
+      const fromStake = l ? slash(l) : 0n;
+      settle(o, BigInt(o.priceAtto) + fromStake, 0n, "refunded", false, fromStake);
+      result = { ok: true, order: o.id, status: "refunded", to_buyer: o.paidBuyer, paid_from_stake: fromStake.toString(),
+        verdict_line: o.verdictLine };
     }
   } else if (fn === "settle_stale") {
     const o = find(args[0]);
@@ -457,28 +675,37 @@ export async function write(fn: WriteFn, args: string[], valueAtto?: bigint): Pr
         verdict_line: o.verdictLine };
     }
   } else if (fn === "list_pack") {
-    const promises: string[] = JSON.parse(args[2]);
-    if (promises.some((p) => /[\r\n]/.test(p))) refuse("each promise is one line, with no line breaks");
-    const hashes: string[] = JSON.parse(args[3]);
-    const id = "L" + (listings.length + 1);
-    listings.push({
-      id,
-      seller: buyer,
-      title: args[0],
-      kind: args[1],
-      promises,
-      hashes,
-      sectionCount: hashes.length,
-      priceAtto: args[4],
-      windowSeconds: Number(args[5]),
-      createdAt: now(),
-      open: true,
-      orders: 0,
-      kept: 0,
-      broken: 0,
-      unclear: 0,
-    });
-    result = { ok: true, listing: id };
+    // Payable: every refusal returns the stake in the same call, nothing raises.
+    const problem = listProblem(args, value);
+    if (problem) result = refused(problem);
+    else {
+      const promises = (JSON.parse(args[2]) as string[]).map((p) => p.trim());
+      const hashes: string[] = JSON.parse(args[3]);
+      const id = "L" + (listings.length + 1);
+      // the mock's connected wallet is the buyer address: it becomes the seller of what it lists
+      balances.set(buyer, (balances.get(buyer) ?? 0n) - value);
+      const l = recount({
+        id,
+        seller: buyer,
+        title: args[0].trim(),
+        kind: args[1].trim().toLowerCase(),
+        promises,
+        hashes,
+        sectionCount: hashes.length,
+        priceAtto: args[4],
+        windowSeconds: Number(args[5]),
+        createdAt: now(),
+        open: true,
+        orders: 0,
+        kept: 0,
+        broken: 0,
+        unclear: 0,
+        ...staked(args[4], value),
+      });
+      listings.push(l);
+      result = { ok: true, listing: id, sections: hashes.length, promises: promises.length, price: l.priceAtto,
+        window_seconds: l.windowSeconds, stake: l.stakeAtto, slice: l.sliceAtto, capacity: l.capacity };
+    }
   }
   } catch (e) {
     if (!(e instanceof Refused)) throw e;

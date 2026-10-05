@@ -163,13 +163,15 @@ function verdictSentence(o: Order, viewer: Viewer): string {
   const priceAndBond = BigInt(o.priceAtto) + BigInt(o.bondAtto);
   const toBuyer = settled && paidBuyer > 0n ? gen(paidBuyer) : gen(priceAndBond);
   const toSeller = settled && paidSeller > 0n ? gen(paidSeller) : gen(priceAndBond);
+  const fromStake = BigInt(o.paidFromStake || "0");
   if (o.verdict === "breaks") {
     const who = viewer === "buyer" ? "is on its way back to you" : viewer === "seller" ? "goes back to the buyer, their bond with it" : "goes back to the buyer";
     const why =
       o.revealedText && charCount(o.revealedText) > MAX_SECTION_CHARS
         ? `Section ${s} is longer than the ${MAX_SECTION_CHARS}-character cap, so the contract settled it as breaking promise ${p} by rule, without asking the validators.`
         : `The validators agreed: section ${s} breaks promise ${p}.`;
-    return `${why} ${toBuyer} ${who}.`;
+    const stake = fromStake > 0n ? ` ${gen(fromStake)} of it is one slice of the seller's stake.` : "";
+    return `${why} ${toBuyer} ${who}.${stake}`;
   }
   if (o.verdict === "keeps") {
     const who = viewer === "buyer" ? "goes to the seller, your bond with it" : viewer === "seller" ? "goes to you, the seller, the buyer's bond with it" : "goes to the seller, the buyer's bond with it";
@@ -556,6 +558,13 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
           // null on a register that does not publish the counter: the page then says nothing about
           // a cap it cannot read, and leaves the contract to refuse a report it will not accept.
           const reportsLeft = o.missingReportsLeft;
+          // One slice of the seller's stake rides on every open order: a breaks verdict or an
+          // unrevealed section pays it to the buyer. null on a register without stakes.
+          const sliceAtto = l?.stakeKnown && BigInt(l.sliceAtto) > 0n ? l.sliceAtto : null;
+          const sliceText = sliceAtto ? gen(sliceAtto) : undefined;
+          const finalStatus = o.status === "settled" || o.status === "settled_stale" || o.status === "released" || o.status === "refunded";
+          const fromStakeAtto = BigInt(o.paidFromStake || "0");
+          const refundTotal = BigInt(o.priceAtto) + (sliceAtto ? BigInt(sliceAtto) : 0n);
           const refundLabel = viewer === "buyer" ? "your wallet" : "the buyer's wallet";
           const you = viewer === "buyer" ? "you" : "the buyer";
           const your = viewer === "buyer" ? "your" : "the buyer's";
@@ -589,7 +598,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 : o.status === "released"
                   ? "Released: the window closed with no dispute and the price went to the seller."
                   : o.status === "refunded"
-                    ? `Refunded: section ${o.missingIndex + 1} was never revealed, so the full price went back to the buyer.`
+                    ? `Refunded: section ${o.missingIndex + 1} was never revealed, so the full price went back to the buyer${fromStakeAtto > 0n ? `, plus ${gen(fromStakeAtto)} from the seller's stake` : ""}.`
                     : o.status === "missing"
                       ? `Section ${o.missingIndex + 1} is reported missing. The seller's reveal window is running; the box below has the next step.`
                       : o.status === "paid" && deadlinePassed
@@ -659,7 +668,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                       <p>
                         You get <strong>one dispute per order</strong>, so choose carefully. A dispute posts a bond of <strong>{bond}</strong>, and the verdict decides where the money goes:
                       </p>
-                      <OutcomeList you="you" your="your" />
+                      <OutcomeList you="you" your="your" slice={sliceText} />
                       {undelivered.length > 0 ? (
                         <p className="text-muted-foreground">
                           {undelivered.length} of {rows?.length ?? 0} sections did not arrive as committed. For those, report the section missing instead; that path needs no bond.
@@ -735,7 +744,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                   )}
                 </GuideStep>
                 <GuideStep n={5} state={s5} title="Verdict">
-                  <OutcomeList you={you} your={your} className="text-muted-foreground" />
+                  <OutcomeList you={you} your={your} slice={sliceText} className="text-muted-foreground" />
                 </GuideStep>
               </ol>
             </section>
@@ -775,7 +784,12 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground">Seller</span>
-                    <Address value={o.seller} />
+                    <span className="inline-flex items-center gap-1.5">
+                      <Address value={o.seller} />
+                      <Link href={`/seller/${o.seller}`} className="text-xs text-primary underline-offset-4 hover:underline">
+                        record
+                      </Link>
+                    </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground">Dispute window</span>
@@ -800,10 +814,25 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                       </span>
                     </div>
                   ) : null}
+                  {sliceAtto && !finalStatus ? (
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-muted-foreground">Seller&apos;s stake behind it</span>
+                      <span className="text-right">
+                        one slice, {gen(sliceAtto)}
+                        <span className="block text-xs text-muted-foreground">to the buyer on breaks or an unrevealed section</span>
+                      </span>
+                    </div>
+                  ) : null}
                   {BigInt(o.paidBuyer || "0") > 0n ? (
                     <div className="flex items-center justify-between gap-2 text-keeps">
                       <span>Paid to buyer</span>
                       <span>{gen(o.paidBuyer)}</span>
+                    </div>
+                  ) : null}
+                  {fromStakeAtto > 0n ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">of it from the seller&apos;s stake</span>
+                      <span>{gen(fromStakeAtto)}</span>
                     </div>
                   ) : null}
                   {BigInt(o.paidSeller || "0") > 0n ? (
@@ -900,7 +929,8 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                   <section className="rounded-2xl border border-breaks/50 bg-breaks/10 p-5 text-sm">
                     <h2 className="text-lg font-semibold">Refunded</h2>
                     <p className="mt-2">
-                      {o.verdictLine || `Section ${o.missingIndex + 1} was reported missing and the seller did not reveal it within ${REVEAL_HOURS} hours. The full price went back to the buyer.`}
+                      {o.verdictLine ||
+                        `Section ${o.missingIndex + 1} was reported missing and the seller did not reveal it within ${REVEAL_HOURS} hours. The full price went back to the buyer${fromStakeAtto > 0n ? `, plus ${gen(fromStakeAtto)} from the seller's stake` : ""}.`}
                     </p>
                   </section>
                 ) : null}
@@ -1046,7 +1076,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                       <FileQuestion className="size-5 text-gold" /> Section {o.missingIndex + 1} reported missing
                     </h2>
                     <p className="text-muted-foreground">
-                      Reported {when(o.missingAt)}. The seller has until {when(revealDeadline)} ({countdown(revealDeadline, cnow)}) to reveal the exact text of section {o.missingIndex + 1} on chain. If they do not, anyone can trigger a full refund of {gen(o.priceAtto)} to the buyer; no model is asked.
+                      Reported {when(o.missingAt)}. The seller has until {when(revealDeadline)} ({countdown(revealDeadline, cnow)}) to reveal the exact text of section {o.missingIndex + 1} on chain. If they do not, anyone can trigger a full refund of {gen(o.priceAtto)} to the buyer{sliceText ? `, plus one slice of the seller's stake (${sliceText})` : ""}; no model is asked.
                     </p>
                     {isSeller ? (
                       <div className="space-y-2">
@@ -1081,7 +1111,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                           title={canRefundMissing ? undefined : `Opens ${when(revealDeadline)}`}
                           onClick={() => void send(ruleTx, o, "refund_missing", [o.id])}
                         >
-                          Full refund ({gen(o.priceAtto)} to the buyer)
+                          Full refund ({gen(refundTotal)} to the buyer)
                         </Button>
                       </WalletGate>
                       <p className="text-xs text-muted-foreground">
@@ -1181,7 +1211,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         {undelivered.length === rows.length ? "The seller has not delivered this pack." : `${undelivered.length} of ${rows.length} sections did not arrive as committed.`}
                       </p>
                       <p className="text-muted-foreground">
-                        Report a missing section: the seller then has {REVEAL_HOURS} hours to reveal its text on chain, and if they do not, anyone can trigger a full refund. No model is asked; the contract only checks the clock and the hash.
+                        Report a missing section: the seller then has {REVEAL_HOURS} hours to reveal its text on chain, and if they do not, anyone can trigger a full refund{sliceText ? `, plus one slice of the seller's stake (${sliceText})` : ""}. No model is asked; the contract only checks the clock and the hash.
                       </p>
                       {/* One report is all a pack that never arrived needs: the seller cannot reveal what
                           they never had, and the refund is the whole price. The cap is on the contract. */}
@@ -1357,7 +1387,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                   ) : null}
                   <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-xs">
                     <p className="font-medium">Where the money goes</p>
-                    <OutcomeList you="you" your="your" />
+                    <OutcomeList you="you" your="your" slice={sliceText} />
                     <p className="text-muted-foreground">
                       After the bond, press Ask the validators. Nothing happens until someone does; with no verdict {STALE_HOURS} hours after the bond, anyone can settle by rule, which pays the seller the price and returns only your bond.
                     </p>
@@ -1410,11 +1440,12 @@ function radioKeys(count: number, current: number | null, set: (i: number) => vo
 }
 
 /** The three verdicts and where the price and the bond go for each, as the contract pays them. */
-function OutcomeList({ you, your, className }: { you: string; your: string; className?: string }) {
+function OutcomeList({ you, your, slice, className }: { you: string; your: string; slice?: string; className?: string }) {
   return (
     <ul className={cn("space-y-1", className)}>
       <li>
-        <span className="font-medium text-breaks">breaks</span>: the price and {your} bond come back to {you}.
+        <span className="font-medium text-breaks">breaks</span>: the price and {your} bond come back to {you}
+        {slice ? `, plus one slice of the seller's stake (${slice})` : ""}.
       </li>
       <li>
         <span className="font-medium text-keeps">keeps</span>: the price and {your} bond go to the seller.

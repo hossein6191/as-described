@@ -66,6 +66,8 @@ function moneyMoves(s: TxStatus): boolean {
   const st = typeof r.status === "string" ? r.status : "";
   if (["settled", "released", "refunded", "settled_stale"].includes(st)) return true;
   if (typeof r.verdict === "string" && r.verdict) return true;
+  // close_listing and withdraw_stake hand the seller's stake back in the same call
+  if (typeof r.returned === "string" && /^[1-9]\d*$/.test(r.returned)) return true;
   return "to_buyer" in r || "to_seller" in r || "paid_buyer" in r || "paid_seller" in r;
 }
 

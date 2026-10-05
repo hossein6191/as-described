@@ -3,11 +3,12 @@
 ## The boundary, written before the code
 
 - **The contract owns:** the ids, the price, the window, the deadline (computed from the
-  transaction's own clock), the bond, the status, the verdict (the closed set, both
-  framings, the comparison rule), the sentence stored with the verdict, the digest register,
-  the counters, and every transfer.
+  transaction's own clock), the bond, the slice, the capacity, the status, the verdict (the
+  closed set, both framings, the comparison rule), the sentence stored with the verdict, the
+  digest register, the counters, every seller's record, and every transfer.
 - **The seller owns:** the title, the kind, the promises and the section hashes, all
-  validated at listing time; and, later, the text of a section they reveal. The promise
+  validated at listing time; how much stake to put behind the listing (at least one slice);
+  and, later, the text of a section they reveal. The promise
   is untrusted the moment it is written: fenced at the prompt boundary, declared untrusted
   in the prompt, stored as written.
 - **The buyer owns:** the choice of which section and which promise to dispute, and the
@@ -128,6 +129,82 @@ earlier design classified leader errors into expected and transient; both branch
 to be unreachable for the reason above, and they were deleted rather than left as code that
 reads like a policy nobody can trigger.
 
+## Why the seller stakes
+
+In the accepted version a seller who broke a promise lost exactly one thing: that sale. The
+buyer got the price and the bond back and the seller kept nothing, which is where they would
+have been without listing at all. Listing a pack that did not match its promises was a free
+option: buyers who never checked paid, buyers who did were refunded, and the seller was never
+worse off than not selling. All the risk sat with the buyer, who is the one who posts a bond.
+
+v2 makes the seller put money behind every promise. `list_pack` takes a stake, and a
+`breaks` verdict pays one slice of it to the buyer, in the same transfer as the price and the
+bond. Breaking a promise now leaves the seller worse off than not selling, and the buyer who
+proved it is paid for doing so. The record of every seller is kept on chain in the same calls
+that move the money (`seller()`: listed, sold, released, kept, broken, unclear, refunded,
+stale, what their stakes hold and what they have paid), so a buyer can read a seller's history
+before buying, and the record cannot drift from the orders because it is written by the same
+code path that settles them. It is per address: a seller can start again from a new address,
+but that address starts with nothing to show.
+
+## Why a slice is half the price
+
+The slice has two jobs that pull in opposite directions. It must be large enough that
+breaking a promise costs the seller more than the sale was worth to them, and it must not be
+so large that a dispute becomes a lottery ticket for the buyer. The buyer's bond is 20 % of
+the price and goes to the seller on `keeps`; the slice is 50 % and goes to the buyer on
+`breaks`. At half the price a seller who breaks a promise ends the sale half the price down
+instead of even, and a buyer who proves it ends half the price up for a bond of a fifth. A
+buyer who disputes a section that plainly keeps its promise still loses the bond, and
+`unclear` still pays the seller, so the burden of proof has not moved. A slice of the whole
+price would make every won dispute pay twice what the buyer spent, which starts to reward
+disputing for its own sake, and would tie up the whole price per open order; half lets a
+seller with a 1 GEN pack sell one copy at a time against 0.5 GEN. The slice is fixed at
+listing time from the price (`STAKE_SLICE_PERCENT`), published by `rules()`, and stored on
+the listing so it never changes under an open order.
+
+## Why capacity instead of one stake for everything
+
+Two simpler designs were considered. A single stake per listing, whatever it sells, leaves
+every buyer after the first slash unbacked: a stake for one order cannot guarantee a hundred.
+Taking a slice from the seller at the moment of each sale would need the seller to sign every
+purchase, so nobody could buy while the seller was away. Capacity sits between them: the
+seller funds as many slices as they want up front, each open order (`paid`, `disputed` or
+`missing`) holds one, and an order that ends frees it. The rule that holds after every call is
+`stake >= open_orders * slice`, so every open order has a whole slice behind it, and a
+listing that has handed out all its slices refuses the next buyer with a reason and a refund
+rather than selling an order nothing backs. A slash takes one slice from a stake that is
+already covering that order, so the rule survives it; a listing left with less than one slice
+can back no new order, so it closes itself (`closed_reason: out_of_stake`). A listing the
+seller already closed keeps the seller's reason. The rule, conservation of every atto the
+contract holds, and every record and total are checked after every step of seeded random
+journeys in the offline suite.
+
+## Why refund_missing slashes, and keeps, unclear and stale do not
+
+The stake pays only where the seller has been shown to have failed. `breaks`, by the
+validators or by rule on an oversize section, is that by definition. `refund_missing` is the
+other one: the seller committed a hash before the sale and, asked for the bytes, could not
+produce them in 24 hours. For the buyer that is a pack that did not arrive, the most basic
+broken promise there is, and without a slash a seller could take money for packs they never
+had and lose nothing but the refund. A seller who is simply away for the day after a report
+pays the slice too; the reveal window is published by `rules()` before anyone lists, and the
+buyer waiting on a missing section cannot tell absence from refusal. `keeps` proves the opposite. `unclear` proves nothing,
+and the contract already reads it in the seller's favour. `settled_stale` means nobody asked
+for a verdict in 24 hours; slashing there would pay a buyer for opening a dispute and walking
+away. `release` and `withdraw_dispute` involve no claim at all. None of these touch the stake.
+
+## Why closing returns the stake only when nothing is open
+
+The stake is the open orders' guarantee, not the seller's deposit to take back at will. If
+`close_listing` returned it while orders were open, a seller who saw a dispute coming could
+close and leave with the slice the verdict was about to pay out. So closing always stops new
+orders, and returns the whole stake in the same call only when no order holds a slice. When
+orders are still open the stake stays behind them, and `withdraw_stake` returns what is left
+once the listing is closed and the last order has ended. It refuses on an open listing,
+because there the stake is what lets the listing sell. There is no partial withdrawal: a
+seller who wants less capacity closes and lists again, which keeps the rule one sentence long.
+
 ## Why a hash, not a label
 
 A section id is a name; a hash is the bytes. The buyer reveals text, not an index alone,
@@ -147,21 +224,32 @@ clock as "window open" so that nothing ever looks closed that is not.
 
 ## Why payable refusals refund
 
-Value sent to a refused payable call is stranded by the chain. `buy` and `open_dispute`
-therefore never raise after taking value: every refusal returns the money in the same
-transaction and says why in the result. The refusal is a signed transaction and its reason is
+Value sent to a refused payable call is stranded by the chain. `list_pack`, `buy` and
+`open_dispute` therefore never raise after taking value: every refusal returns the money in
+the same transaction and says why in the result. `list_pack` became payable when it began
+taking the stake, so its old checks (title, kind, promises, hashes, price, window) were
+rewritten to produce a reason instead of raising; `_read_promises` and `_read_hashes` return
+the reason with the value for the same reason. `list_pack` and `buy` also say how much came
+back, in `returned`. The refusal is a signed transaction and its reason is
 in its receipt on the explorer; it is not a ledger row, because `ledger()` lists orders.
 
 ## Verified and not verified
 
-- **Verified offline** (`pytest tests/ -q`, 84 tests, no network): every validation, every
+- **Verified offline** (`pytest tests/ -q`, 98 tests, no network): every validation, every
   refund, the authority table, the fence and the delimiter closure, the combine table, the
   consensus closures with a stubbed model, the sentence the contract writes, all money paths
-  with a recording payee, the calendar both ways against Python's, the journeys; and
-  `tools/mutate.py`, 83 defences removed or inverted one at a time, none surviving.
-- **Verified on Studio** (`tests/on_chain/smoke.mjs` and `tests/site/e2e.mjs`, throwaway
-  accounts and a throwaway register; see `tests/on_chain.md`). Each of these is a signed
-  transaction:
+  with a recording payee, the calendar both ways against Python's, the journeys; the stake
+  (the slice, capacity and its refusal, the slash on `breaks` and on `refund_missing`, the
+  self-close, `close_listing` and `withdraw_stake`, every seller's record), and seeded random
+  journeys through every write that check, after each step, that every atto the contract
+  holds is a stake, an open order's price or a bond, that every open order is backed by a
+  slice, that every record and total matches the orders, and that a write which raised
+  changed nothing; and `tools/mutate.py`, 151 defences removed or inverted one at a time,
+  none surviving.
+- **Verified on Studio, on the accepted (v1) contract** (`tests/on_chain/smoke.mjs` and
+  `tests/site/e2e.mjs`, throwaway accounts and a throwaway register; see `tests/on_chain.md`).
+  v2 keeps every one of these paths; the money on `breaks` and `refunded` now also carries a
+  slice of the stake. Each of these is a signed transaction:
   - `breaks`: [`0x8020a4f4…`](https://explorer-studio.genlayer.com/tx/0x8020a4f4ed4a0f65aeda4fe8a9036de42feb685089cc59174f40aeecbfa7aae8),
     3 agree, 1 disagree, 1 idle; price and bond to the buyer.
   - `keeps`: [`0x86b1a79c…`](https://explorer-studio.genlayer.com/tx/0x86b1a79c71875e3bc15212e368344030c4750cc83d0938cfc97577971ad9e1f5),
@@ -202,6 +290,14 @@ in its receipt on the explorer; it is not a ledger row, because `ledger()` lists
 - **Not verified, by design:** which model the validators run, and how they would read a
   promise that needs world knowledge ("healthy", "authentic"). The site warns sellers
   about such promises; the contract does not try to detect them.
+- **Verified on chain for v2** (register `0xE31e77984bce5623AB50c7CB5530a030B9173718`, 5 October
+  2026, `tests/on_chain/smoke-v2.log`, 86 passed and 0 failed): `list_pack` with a stake and a
+  refused listing whose stake came back, the capacity refusal in `buy`, the slash on a `breaks`
+  verdict (1.7 GEN to the buyer on a 1 GEN pack) and on an oversize section, the self-close out
+  of stake, `close_listing` with and without an open order, `withdraw_stake` refused while an
+  order is open and paid after, `keeps` and `release` leaving the stake untouched, and `seller()`
+  and `stats()` matching the run. The slash on `refund_missing` needs 24 hours to pass and is
+  covered offline only.
 - **Not exercised on chain** so far, covered offline only: `refund_missing` and
   `settle_stale`, which both need 24 hours to pass; `close_listing`; and the `unclear`
   verdict, which no run has produced yet (`stats()` reports `unclear: 0` on every register

@@ -3,12 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Camera, Clock, FileText, Hash, RefreshCw } from "lucide-react";
+import { ArrowRight, Camera, Clock, FileText, Hash, RefreshCw, ShieldAlert } from "lucide-react";
 
 import { Address } from "@/components/address";
 import { BuyCard } from "@/components/buy-card";
 import { LedgerTable } from "@/components/ledger-table";
 import { PromisePills } from "@/components/promise-pills";
+import { SellAnywhere } from "@/components/sell-anywhere";
+import { BackingLine, SellerRecordLine } from "@/components/stake";
 import { BlockSkeleton, ReadBlock, ReadError, SnapshotBanner, readEach } from "@/components/read-state";
 import { YourRegisterNotice } from "@/components/register-line";
 import { TxRail } from "@/components/tx-rail";
@@ -28,6 +30,8 @@ import {
   readListing,
   readOrder,
   readOrdersOf,
+  readSeller,
+  stakeBlock,
   type LedgerRow,
 } from "@/lib/chain";
 import { packStatus } from "@/lib/api";
@@ -44,7 +48,7 @@ const bondFallback = (priceAtto: string) => {
 async function readPackPage(id: string) {
   const l = await readListing(id);
   if (!l.data) return { data: null, source: l.source } as const;
-  const [bond, uploaded] = await Promise.all([
+  const [bond, uploaded, seller] = await Promise.all([
     readBondFor(id).catch(() => bondFallback(l.data!.priceAtto)),
     isMock
       ? Promise.resolve(mockPackUploaded(id))
@@ -52,8 +56,13 @@ async function readPackPage(id: string) {
           // null when the store never answered: a failed read is never shown as "not delivered".
           demo ? true : packStatus(id, { demo: false }).then((s) => (s.checked ? s.uploaded : null)).catch(() => null),
         ),
+    // The seller's record is context, never a reason for the page to fail: null shows the link alone.
+    readSeller(l.data.seller).then((r) => r.data).catch(() => null),
   ]);
-  return { data: { listing: l.data, bondAtto: bond && bond !== "0" ? bond : bondFallback(l.data.priceAtto), uploaded }, source: l.source } as const;
+  return {
+    data: { listing: l.data, bondAtto: bond && bond !== "0" ? bond : bondFallback(l.data.priceAtto), uploaded, seller },
+    source: l.source,
+  } as const;
 }
 
 /** The contract's ledger view answers at most this many rows, newest first. */
@@ -108,6 +117,11 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
       void orders.refresh();
       void page.refresh();
       router.push(`/order/${r.order}?tx=${hash}&new=1`);
+    } else if (s.applied) {
+      // A refused buy (every slice taken, or the listing closed meanwhile) came back with the
+      // price: read the listing again so the card shows why instead of offering Pay once more.
+      // TxRail has already dropped the cached views, so this is a live read.
+      void page.refresh();
     }
   });
 
@@ -160,6 +174,8 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
         {(d) => {
           const l = d!.listing;
           const price = gen(l.priceAtto);
+          // The stake decides whether one more order can be backed now; the contract refuses a buy it cannot back.
+          const block = stakeBlock(l);
           return (
             <div className="grid min-w-0 gap-8 lg:grid-cols-[1fr_420px]">
               <div className="min-w-0 space-y-6">
@@ -169,7 +185,8 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                   </span>
                   <div className="absolute top-3 left-3 flex flex-wrap gap-2">
                     {l.seller.toLowerCase() === DEMO_SELLER.toLowerCase() ? <Badge>Demo</Badge> : null}
-                    {!l.open ? <Badge variant="secondary">Closed</Badge> : null}
+                    {!l.open ? <Badge variant="secondary">{l.closedReason === "out_of_stake" ? "Out of stake" : "Closed"}</Badge> : null}
+                    {l.open && l.stakeKnown && l.free <= 0 ? <Badge className="bg-gold text-black">All slots taken</Badge> : null}
                     {d!.uploaded === false ? <Badge className="bg-gold text-black">Not delivered yet</Badge> : null}
                   </div>
                   <span className="absolute right-3 bottom-3 rounded-full bg-black/40 px-2 py-0.5 text-[11px] font-medium text-white/90 capitalize backdrop-blur-sm">
@@ -191,6 +208,10 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                   </div>
                   <div className="text-sm">
                     <Address value={l.seller} label="Seller" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <BackingLine l={l} />
+                    <SellerRecordLine address={l.seller} record={d!.seller} label="Seller's record:" />
                   </div>
                 </div>
 
@@ -221,6 +242,8 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                     ))}
                   </ol>
                 </section>
+
+                <SellAnywhere listing={l} />
               </div>
 
               <div className="min-w-0 space-y-3 lg:sticky lg:top-20 lg:self-start">
@@ -239,7 +262,23 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                   payLabel={`Pay ${price}`}
                   onPay={() => void pay()}
                   busy={tx.sending}
-                  disabled={!l.open || isSeller || fromSnapshot || (!!tx.hash && !tx.final)}
+                  disabled={!l.open || !!block || isSeller || fromSnapshot || (!!tx.hash && !tx.final)}
+                  rows={
+                    l.stakeKnown
+                      ? [
+                          {
+                            term: "Seller's stake behind it",
+                            value: gen(l.stakeAtto),
+                            note: l.open ? `${l.free} more ${l.free === 1 ? "buyer" : "buyers"} can be covered now` : undefined,
+                          },
+                          {
+                            term: "If a section breaks a promise",
+                            value: `${price} + bond + ${gen(l.sliceAtto)}`,
+                            note: "back to you: the extra is one slice of the seller's stake",
+                          },
+                        ]
+                      : undefined
+                  }
                   gate={
                     fromSnapshot && !tx.hash ? (
                       <div className="space-y-2 rounded-lg border border-gold/40 bg-gold/10 p-3 text-sm">
@@ -253,6 +292,10 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                           <RefreshCw /> Read it again
                         </Button>
                       </div>
+                    ) : block ? (
+                      <p className="flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 p-3 text-sm">
+                        <ShieldAlert className="mt-0.5 size-4 shrink-0 text-gold" /> <span>{block}</span>
+                      </p>
                     ) : !l.open ? (
                       <p className="rounded-lg border bg-muted/40 p-3 text-center text-sm text-muted-foreground">This listing is closed. Existing orders continue.</p>
                     ) : isSeller ? (
@@ -264,7 +307,7 @@ export default function PackPage({ params }: { params: Promise<{ id: string }> }
                 >
                   {d!.uploaded === false && l.open ? (
                     <p className="rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
-                      The seller has not uploaded the pack contents yet. You can still buy. If a section never arrives, report it: the seller then has 24 hours to put its exact text on chain; if they do not, you get the full price back.
+                      The seller has not uploaded the pack contents yet. You can still buy. If a section never arrives, report it: the seller then has 24 hours to put its exact text on chain; if they do not, you get the full price back{l.stakeKnown ? `, plus one slice of the seller's stake (${gen(l.sliceAtto)})` : ""}.
                     </p>
                   ) : null}
                   {tx.error ? <p className="text-sm text-breaks">{tx.error}</p> : null}

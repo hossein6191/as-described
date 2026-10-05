@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import "./globals.css";
-import { Providers } from "@/components/providers";
+import { SiteChrome } from "@/components/site-chrome";
 import { SiteHeader } from "@/components/site-header";
 import { SiteBackground } from "@/components/site-background";
 import { SiteFooter } from "@/components/site-footer";
@@ -39,12 +39,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="flex min-h-full flex-col">
-        <SiteBackground />
-        <Providers>
-          <SiteHeader />
-          <main className="flex-1">{children}</main>
-          <SiteFooter />
-        </Providers>
+        {/* /embed/* renders without any of this: see components/site-chrome.tsx */}
+        <SiteChrome background={<SiteBackground />} header={<SiteHeader />} footer={<SiteFooter />}>
+          {children}
+        </SiteChrome>
       </body>
     </html>
   );

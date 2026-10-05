@@ -71,6 +71,7 @@ type Progress = {
   staleAt: number; // when `asking` may be settled by rule (ms), 0 when there is none
   stalePassed: boolean; // that moment has passed on the chain's clock
   judged: Order | null; // the newest order settled by the validators, else by rule
+  stakes: boolean; // the register's listings carry sellers' stakes (false on a register deployed before them)
   gap: string; // the first error among the per-order reads; "" when every read answered
 };
 
@@ -171,6 +172,7 @@ async function readProgress(address: string): Promise<ReadResult<Progress>> {
       // the chain's clock when the order was read (the local clock for a row with no read time)
       stalePassed: !!asking && staleAt > 0 && chainTime(asking, asking.readAtMs || Date.now()) >= staleAt,
       judged: orders.find((o) => o.status === "settled") ?? orders.find((o) => o.status === "settled_stale") ?? null,
+      stakes: listings.length === 0 || listings.some((l) => l.stakeKnown),
       gap,
     },
     source: snapshot ? "snapshot" : "chain",
@@ -181,7 +183,8 @@ const whenMs = (ms: number) => (ms > 0 ? when(new Date(ms).toISOString()) : "");
 
 /** The money sentence for a settled order when the register does not write one itself. */
 function verdictSentence(o: Order): string {
-  if (o.verdict === "breaks") return `The validators found that section ${o.sectionIndex + 1} breaks promise P${o.promiseIndex + 1}: the price and the bond went back to the buyer.`;
+  const stake = BigInt(o.paidFromStake || "0") > 0n ? `, with ${gen(o.paidFromStake)} from the seller's stake` : "";
+  if (o.verdict === "breaks") return `The validators found that section ${o.sectionIndex + 1} breaks promise P${o.promiseIndex + 1}: the price and the bond went back to the buyer${stake}.`;
   if (o.verdict === "keeps") return `The validators found that section ${o.sectionIndex + 1} keeps promise P${o.promiseIndex + 1}: the price and the bond went to the seller.`;
   return `The validators could not get a clean yes and no on section ${o.sectionIndex + 1} against P${o.promiseIndex + 1} (unclear): the seller kept the price and the bond went back to the buyer.`;
 }
@@ -258,7 +261,9 @@ export function StartHere({ className, compact = false }: { className?: string; 
               Pick a pack in the <Link href="/shop" className={link}>shop</Link>, press &ldquo;Buy&rdquo;, then &ldquo;Pay&rdquo; on its page.{" "}
             </>
           )}
-          Its price goes into escrow; a dispute adds a bond of 20% of the price. Or <Link href="/sell" className={link}>sell</Link> a pack of your own.
+          Its price goes into escrow; a dispute adds a bond of 20% of the price.{" "}
+          {p?.stakes !== false ? "The seller's stake stands behind it: a broken promise pays you one slice of it, half the price, on top of the refund. " : ""}
+          Or <Link href="/sell" className={link}>sell</Link> a pack of your own.
         </>
       ),
       done: !!p && (p.bought || !!p.listed),
@@ -436,7 +441,14 @@ function disputeStep(
         <>
           Buyers pay its price into escrow, and <Link href={`/pack/${l.id}`} className={link}>its page</Link> lists every order. Once the
           dispute window closes, &ldquo;Release&rdquo; on the order pays you; if a buyer reports a section missing, you have 24 hours to put its text on
-          chain. To see a dispute yourself, buy a pack you did not list
+          chain{p.stakes ? ", or the buyer is refunded with one slice of your stake" : ""}.
+          {p.stakes ? (
+            <>
+              {" "}Your record and your stake are public on <Link href={`/seller/${l.seller}`} className={link}>your seller page</Link>, where you
+              close the listing and take the stake back.
+            </>
+          ) : null}{" "}
+          To see a dispute yourself, buy a pack you did not list
           {buy.demo ? ` (demo pack ${buy.demo.id} is one)` : ""}: a seller cannot buy their own. A second wallet works too.
         </>
       ),
@@ -565,8 +577,9 @@ function verdictStep(p: Progress | null): Step {
     detail: (
       <>
         After the bond, press &ldquo;Ask the validators&rdquo; on the order. Studio assigns five validators; each one that answers in time asks its
-        own model two questions, and code turns the answers into one word. Breaks: your price and bond come back. Keeps: both go to the
-        seller. Unclear: the seller keeps the price and your bond comes back.
+        own model two questions, and code turns the answers into one word. Breaks: your price and bond come back
+        {p?.stakes !== false ? ", plus one slice of the seller's stake" : ""}. Keeps: both go to the seller. Unclear: the seller keeps the
+        price and your bond comes back.
       </>
     ),
     done: false,

@@ -34,6 +34,7 @@ export { callerOf, SHARED_CALLER, takeChainRead, takeDeliveryCheck, takeLookup, 
 /** sha256 of the deployed bytes of earlier releases whose registers the delivery API still serves. */
 const EARLIER_RELEASES = [
   "5fc6a51c18599242a1d7c46dd85a19b3440bd64fba79af0983a074777e702649", // first release, deployed 18 Sep 2026
+  "eda078db37dcd15ed5efed0e62c35e48d355b12539ec8c2558b74fa0223fe803", // the accepted version 1 (before stakes), deployed 23 Sep 2026
 ];
 const CONTRACT_FILE = path.join(process.cwd(), "public", "contracts", "as_described.py");
 

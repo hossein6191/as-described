@@ -23,6 +23,8 @@ export interface ProductCardProps {
   sectionCount?: number;
   /** text under the title, e.g. "3 promises · 8 sections" */
   meta?: string;
+  /** lines under the tally, e.g. the stake behind the pack and the seller's record */
+  details?: React.ReactNode;
   onBuy?: () => void;
   buyLabel?: string;
   disabled?: boolean;
@@ -99,6 +101,7 @@ export default function ProductCard({
   broken = 0,
   unclear = 0,
   meta,
+  details,
   onBuy,
   buyLabel = "Buy",
   disabled,
@@ -162,6 +165,7 @@ export default function ProductCard({
         <h3 className="line-clamp-2 font-semibold text-foreground text-sm tracking-tight">{title}</h3>
         {meta ? <p className="text-xs text-muted-foreground">{meta}</p> : null}
         <Tally kept={kept} broken={broken} unclear={unclear} />
+        {details ? <div className="flex flex-col gap-1">{details}</div> : null}
 
         <div className="mt-1 flex items-baseline gap-2">
           <span className="font-bold text-foreground text-xl tracking-tight">{priceLabel}</span>

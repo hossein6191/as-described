@@ -144,6 +144,34 @@ the site ships none. `lib/chain.ts` asks for it only after a live read failed ev
 and returns the item with `source: "snapshot"` so the page can label it. Route handlers
 never use the snapshot: an upload or a read is authorised by the chain or not at all.
 
+## Public listing routes (for other websites)
+
+Three read-only ways for any other site to show, and sell, a listing. All three read the
+site's own register on the server through `lib/public-listing.ts`. An id the register cannot
+hold (above its listing count, or one the contract never writes, such as `L0` or `L007`) is
+answered "no such listing" from that count, which is read with one `stats` call at most every
+10 seconds and spends no budget; a loop over made-up ids therefore costs nothing per id. Any
+other answer (a missing one included) is reused for 60 seconds by every request on the
+instance, and a new read (up to two view calls: `listing`, then `seller`) is budgeted at 6 a
+minute per caller and 10 a minute per instance (`lib/budget.ts`). When a read cannot start or
+gets no answer, an answer up to 10 minutes old stands in, marked stale; with none, each route
+answers with its neutral form below. Nothing is signed and nothing private is served: these
+are the contract's own public views.
+
+| route | answer | cache |
+|---|---|---|
+| `GET /embed/[id]` | a compact HTML card: title, price, promises, the stake and how many more buyers it covers, the seller's record, and a button that opens `/pack/[id]` in a new tab (a wallet does not inject into another site's frame) | rendered per request from the shared answer |
+| `GET /api/badge/[id]` | `image/svg+xml`: `As Described \| 3 sold · 0 broken · 1.5 GEN staked`, with `· 0.5 GEN paid to buyers` added once the stake has paid one (teal; orange once a promise broke or the stake paid a buyer; grey when closed). A register before stakes shows `sold · kept · broken` | `max-age=60, s-maxage=60` |
+| `GET /api/listing/[id]` | JSON, CORS `*`: `{ ok, register, chain_id, read_at, stale_read, listing, seller, links }`. `listing` carries the contract's `listing()` row under the same names (`listing`, `title`, `kind`, `seller`, `price`, `bond`, `promises`, `hashes`, `section_count`, `window_seconds`, `created_at`, `open`, `closed_reason`, `orders`, `kept`, `broken`, `unclear`, `stake`, `slice`, `open_orders`, `capacity`, `free`, `stake_paid`) plus `stakes`, false on a register before stakes, where the stake fields are `null`; `seller` is the `seller(address)` view's answer, `null` when it could not be read; amounts are atto strings | `max-age=60, s-maxage=60` |
+
+`/embed/*` is the only path another site may frame (`next.config.ts`: `frame-ancestors *`
+there, `frame-ancestors 'none'` and `X-Frame-Options: DENY` everywhere else). It renders
+without the header, footer, wallet or animated background (`components/site-chrome.tsx`),
+so there is no control in it a hidden frame could steer. The badge never errors: an unknown
+id, a bad id or a failed read is a grey badge with status 200 and a 15-second cache. The JSON
+answers `400` for a bad id, `404` for an unknown one and `503` with a `reason` when nothing
+could be read. Each pack page carries the snippets in a "Sell it anywhere" box.
+
 ## Client helpers (`lib/api.ts`)
 
 `packStatus(listing, { demo })` → `{ uploaded, checked }`, `uploadPack(listing, sections,

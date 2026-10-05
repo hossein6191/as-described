@@ -19,6 +19,12 @@
 // readOrder(id, register, { fresh: true }) drops one order's entry for a page that is waiting
 // for that order to change. The shop reads its listings with one listings() call per 25
 // rows; a register deployed before that view existed is read with listing_ids + listing().
+//
+// Stakes (v2): a seller lists with a stake, one slice of it (half the price) backs each open
+// order, and a breaks verdict or an unrevealed missing section pays one slice to the buyer. A
+// register deployed before stakes answers rows without those fields: the site then reads every
+// stake as absent (stakeKnown false), never as zero, so it does not block a buy the old contract
+// would take, and it lists without sending a stake the old list_pack would not accept.
 
 export const CHAIN_ID = 61999;
 export const CHAIN_ID_HEX = "0xf22f";
@@ -34,6 +40,9 @@ export type OrderStatus =
   | "released"
   | "missing"
   | "refunded";
+
+/** Why a listing takes no new orders: "" while open, closed by its "seller", or "out_of_stake" (a slash left less than one slice). */
+export type ClosedReason = "" | "seller" | "out_of_stake";
 
 export type Listing = {
   id: string; // "L1"
@@ -51,6 +60,21 @@ export type Listing = {
   kept: number;
   broken: number;
   unclear: number;
+  /** the row carries the stake fields; false on a register deployed before stakes, where none of the fields below mean anything */
+  stakeKnown: boolean;
+  /** the seller's stake still on this listing (atto) */
+  stakeAtto: string;
+  /** one slice: half the price, fixed at listing time; one breaks verdict or unrevealed section pays it to the buyer (atto) */
+  sliceAtto: string;
+  /** orders that are paid, disputed or missing: each one has a slice of the stake behind it */
+  openOrders: number;
+  /** open orders the stake backs at a time: stake ÷ slice, rounded down */
+  capacity: number;
+  /** how many more buyers the stake can cover now: capacity − open orders, never below 0 */
+  free: number;
+  /** paid to buyers out of this listing's stake, in total (atto) */
+  stakePaidAtto: string;
+  closedReason: ClosedReason;
 };
 
 export type Order = {
@@ -76,6 +100,8 @@ export type Order = {
   missingReportsLeft: number | null;
   paidBuyer: string;
   paidSeller: string;
+  /** the part of paidBuyer that came out of the seller's stake (one slice on breaks or refunded); "0" otherwise */
+  paidFromStake: string;
   windowOpen: boolean;
   bondRequiredAtto: string;
   /** sections the seller put on chain with reveal(), ascending index (0-based); [] on older registers */
@@ -106,6 +132,7 @@ export type LedgerRow = Pick<
   | "judgedAt"
   | "paidBuyer"
   | "paidSeller"
+  | "paidFromStake"
 > & { openedAt: string };
 
 export type Stats = {
@@ -119,7 +146,66 @@ export type Stats = {
   released: number;
   /** disputes settled by rule because nobody asked the validators in time (settle_stale) */
   stale: number;
+  /** the register counts stakes (false before v2: the three below are then 0 and mean nothing) */
+  stakeKnown: boolean;
+  /** sellers' stakes held by the contract now, across every listing (atto) */
+  stakeHeldAtto: string;
+  /** paid to buyers out of sellers' stakes, in total (atto) */
+  stakePaidAtto: string;
+  /** wallets that have listed at least one pack */
+  sellers: number;
 };
+
+/** One seller's public record, kept by the contract on every path that moves their money. */
+export type SellerRecord = {
+  seller: string; // 0x… lowercase
+  /** false for an address that never listed: every number is then 0 */
+  known: boolean;
+  /** their listing ids, oldest first */
+  listings: string[];
+  listed: number;
+  sold: number;
+  released: number;
+  kept: number;
+  broken: number;
+  unclear: number;
+  refunded: number;
+  stale: number;
+  /** held now across all their listings (atto) */
+  stakedAtto: string;
+  /** paid to their buyers out of their stakes, in total (atto) */
+  stakePaidAtto: string;
+  /** ISO of their first listing; "" when none */
+  firstListed: string;
+};
+
+/** The contract's STAKE_SLICE_PERCENT: one slice is this share of the price. */
+export const STAKE_SLICE_PERCENT = 50n;
+/** One slice of a price, as the contract fixes it at listing time. */
+export const sliceOf = (priceAtto: string | bigint): bigint => (BigInt(priceAtto) * STAKE_SLICE_PERCENT) / 100n;
+/** The buyer's dispute bond for a price, as the contract's _bond_for_price: 20% of it, at least 0.01 GEN. */
+export function bondOf(priceAtto: string | bigint): bigint {
+  const bond = (BigInt(priceAtto) * 20n) / 100n;
+  return bond < 10n ** 16n ? 10n ** 16n : bond;
+}
+
+/**
+ * Why the stake stops a new order on this listing, in a sentence; "" when it does not (or the
+ * register has no stakes). The pack page shows it in place of a buy the contract would refuse.
+ */
+export function stakeBlock(l: Listing): string {
+  if (!l.stakeKnown) return "";
+  if (!l.open && l.closedReason === "out_of_stake") {
+    return "This listing closed itself: a buyer was paid a slice of the seller's stake (a broken promise, or a section never revealed) and less than one slice is left, so it cannot back another order. Orders already open continue.";
+  }
+  if (l.open && l.free <= 0) {
+    const n = l.capacity;
+    return n > 0
+      ? `The seller's stake backs ${n} open ${n === 1 ? "order" : "orders"} at a time and ${n === 1 ? "it is" : `all ${n} are`} taken. Buying opens again when one of them ends.`
+      : "The seller's stake does not cover one slice, so this listing cannot back an order.";
+  }
+  return "";
+}
 
 export type Votes = { agree: number; disagree: number; idle: number };
 export type TxStatus = {
@@ -221,6 +307,8 @@ export type Snapshot = {
   ledger?: LedgerRow[];
   stats?: Stats;
   bonds?: Record<string, string>;
+  /** seller records by lowercase address (snapshots taken after stakes existed) */
+  sellers?: Record<string, SellerRecord>;
 };
 
 let snapshotCache: Promise<Snapshot | null> | null = null;
@@ -249,18 +337,44 @@ const snapOrder = (o: Order | null): Order | null =>
         ...o,
         revealed: Array.isArray(o.revealed) ? o.revealed.map((r) => ({ ...r })) : [],
         verdictLine: typeof o.verdictLine === "string" ? o.verdictLine : "",
+        paidFromStake: typeof o.paidFromStake === "string" ? o.paidFromStake : "0",
         // a snapshot's clock is hours old: chainTime() falls back to the reader's own
         chainNow: "",
         readAtMs: 0,
       }
     : null;
+/** A snapshot listing as a Listing today: one taken before stakes existed has none (stakeKnown false). */
+const snapListing = (l: Listing | null): Listing | null =>
+  l
+    ? {
+        ...l,
+        stakeKnown: l.stakeKnown === true,
+        stakeAtto: typeof l.stakeAtto === "string" ? l.stakeAtto : "0",
+        sliceAtto: typeof l.sliceAtto === "string" ? l.sliceAtto : "0",
+        openOrders: typeof l.openOrders === "number" ? l.openOrders : 0,
+        capacity: typeof l.capacity === "number" ? l.capacity : 0,
+        free: typeof l.free === "number" ? l.free : 0,
+        stakePaidAtto: typeof l.stakePaidAtto === "string" ? l.stakePaidAtto : "0",
+        closedReason: l.closedReason === "seller" || l.closedReason === "out_of_stake" ? l.closedReason : "",
+      }
+    : null;
+const snapLedgerRow = (r: LedgerRow): LedgerRow => ({ ...r, paidFromStake: typeof r.paidFromStake === "string" ? r.paidFromStake : "0" });
 const snapStats = (s: Stats | undefined): Stats | null =>
-  s ? { ...s, stale: typeof s.stale === "number" ? s.stale : 0 } : null;
+  s
+    ? {
+        ...s,
+        stale: typeof s.stale === "number" ? s.stale : 0,
+        stakeKnown: s.stakeKnown === true,
+        stakeHeldAtto: typeof s.stakeHeldAtto === "string" ? s.stakeHeldAtto : "0",
+        stakePaidAtto: typeof s.stakePaidAtto === "string" ? s.stakePaidAtto : "0",
+        sellers: typeof s.sellers === "number" ? s.sellers : 0,
+      }
+    : null;
 /** The snapshot's listings in listing order (listingIds first, when it has them). */
 const snapListings = (s: Snapshot): Listing[] | null => {
   if (!s.listings) return null;
-  const all = values(s.listings);
-  if (!s.listingIds) return all.slice();
+  const all = values(s.listings).map(snapListing).filter((l): l is Listing => !!l);
+  if (!s.listingIds) return all;
   return s.listingIds.map((id) => all.find((l) => l.id === id)).filter((l): l is Listing => !!l);
 };
 
@@ -410,8 +524,20 @@ const isEmptyRow = (v: unknown): boolean => {
   return false;
 };
 
+const asClosedReason = (v: unknown): ClosedReason => {
+  const s = str(v).toLowerCase();
+  return s === "seller" || s === "out_of_stake" ? s : "";
+};
+
 export function mapListing(row: Row, id: string): Listing {
   const hashes = list(row.hashes ?? row.hashes_json);
+  // A row without "stake" comes from a register deployed before stakes: every stake field is
+  // then absent, not zero, and stakeKnown tells the pages not to read them.
+  const stakeKnown = "stake" in row;
+  const stake = BigInt(atto(row.stake));
+  const slice = BigInt(atto(row.slice));
+  const openOrders = num(row.open_orders ?? row.openOrders);
+  const capacity = num(row.capacity, slice > 0n ? Number(stake / slice) : 0);
   return {
     id: str(row.id ?? row.listing ?? id),
     seller: addr(row.seller),
@@ -428,6 +554,14 @@ export function mapListing(row: Row, id: string): Listing {
     kept: num(row.kept),
     broken: num(row.broken),
     unclear: num(row.unclear),
+    stakeKnown,
+    stakeAtto: stake.toString(),
+    sliceAtto: slice.toString(),
+    openOrders,
+    capacity,
+    free: Math.max(0, num(row.free, capacity - openOrders)),
+    stakePaidAtto: atto(row.stake_paid ?? row.stakePaidAtto),
+    closedReason: asClosedReason(row.closed_reason ?? row.closedReason),
   };
 }
 
@@ -519,6 +653,7 @@ export function mapOrder(row: Row, id: string, readAtMs: number = Date.now()): O
     missingReportsLeft: "missing_reports_left" in row ? num(row.missing_reports_left, 0) : null,
     paidBuyer: atto(row.paid_buyer ?? row.paidBuyer),
     paidSeller: atto(row.paid_seller ?? row.paidSeller),
+    paidFromStake: atto(row.paid_from_stake ?? row.paidFromStake),
     windowOpen: bool(row.window_open ?? row.windowOpen),
     bondRequiredAtto: atto(row.bond_required ?? row.bondRequiredAtto ?? row.bond_required_atto),
     revealed,
@@ -544,6 +679,7 @@ export function mapLedgerRow(row: Row): LedgerRow {
     judgedAt: o.judgedAt,
     paidBuyer: o.paidBuyer,
     paidSeller: o.paidSeller,
+    paidFromStake: o.paidFromStake,
     openedAt: o.openedAt,
   };
 }
@@ -558,6 +694,70 @@ export function mapStats(row: Row): Stats {
     refunded: num(row.refunded),
     released: num(row.released),
     stale: num(row.stale),
+    stakeKnown: "stake_held" in row,
+    stakeHeldAtto: atto(row.stake_held ?? row.stakeHeldAtto),
+    stakePaidAtto: atto(row.stake_paid ?? row.stakePaidAtto),
+    sellers: num(row.sellers),
+  };
+}
+
+/** The seller(address) view: an unknown address answers known false and zeros. */
+export function mapSeller(row: Row, address: string): SellerRecord {
+  return {
+    seller: addr(row.seller ?? address),
+    known: bool(row.known),
+    listings: list(row.listings),
+    listed: num(row.listed),
+    sold: num(row.sold),
+    released: num(row.released),
+    kept: num(row.kept),
+    broken: num(row.broken),
+    unclear: num(row.unclear),
+    refunded: num(row.refunded),
+    stale: num(row.stale),
+    stakedAtto: atto(row.staked ?? row.stakedAtto),
+    stakePaidAtto: atto(row.stake_paid ?? row.stakePaidAtto),
+    firstListed: str(row.first_listed ?? row.firstListed),
+  };
+}
+
+/**
+ * What a write's JSON return says, in the fields the pages act on. Every refusal of a payable call
+ * is {ok: false, reason}, and the value came back in the same call; list_pack and buy also say how
+ * much in `returned` (open_dispute's refusal does not, and reads "0" here). close_listing and
+ * withdraw_stake say what they returned to the seller; judge and refund_missing say how much of
+ * the buyer's payout came out of the seller's stake (`paid_from_stake`).
+ */
+export type Outcome = {
+  ok: boolean;
+  reason: string;
+  /** atto sent back by this call: a refused payment, or the stake a close or a withdraw returned */
+  returnedAtto: string;
+  /** atto of the buyer's payout that came out of the seller's stake */
+  fromStakeAtto: string;
+  listing: string;
+  order: string;
+  stakeAtto: string;
+  sliceAtto: string;
+  capacity: number;
+  /** open orders still backed by the stake after a close */
+  openOrders: number;
+};
+
+export function outcomeOf(result: Record<string, unknown> | null | undefined): Outcome | null {
+  if (!result || typeof result !== "object" || !("ok" in result)) return null;
+  const r = result as Row;
+  return {
+    ok: r.ok === true,
+    reason: str(r.reason),
+    returnedAtto: atto(r.returned),
+    fromStakeAtto: atto(r.paid_from_stake),
+    listing: str(r.listing),
+    order: str(r.order),
+    stakeAtto: atto(r.stake),
+    sliceAtto: atto(r.slice),
+    capacity: num(r.capacity),
+    openOrders: num(r.open_orders),
   };
 }
 
@@ -638,7 +838,7 @@ export async function readListing(
       const v = await view("listing", [id], register);
       return isEmptyRow(v) ? null : mapListing(v as Row, id);
     },
-    (s) => byId(s.listings, id),
+    (s) => snapListing(byId(s.listings, id)),
     register,
   );
 }
@@ -817,14 +1017,14 @@ export async function readLedger(count: number): Promise<ReadResult<LedgerRow[]>
       return rows.map((r) => mapLedgerRow(typeof r === "string" ? (parseView(r) as Row) : (r as Row)));
     },
     (s) => {
-      if (s.ledger) return s.ledger.slice(0, n);
+      if (s.ledger) return s.ledger.slice(0, n).map(snapLedgerRow);
       if (!s.orders) return null;
       // newest first, like the contract's ledger(count)
       return values(s.orders).slice().reverse().slice(0, n).map((o) => ({
         id: o.id, listing: o.listing, title: o.title, buyer: o.buyer, seller: o.seller,
         priceAtto: o.priceAtto, status: o.status, verdict: o.verdict, sectionIndex: o.sectionIndex,
         promiseIndex: o.promiseIndex, judgedAt: o.judgedAt, paidBuyer: o.paidBuyer,
-        paidSeller: o.paidSeller, openedAt: o.openedAt,
+        paidSeller: o.paidSeller, paidFromStake: o.paidFromStake ?? "0", openedAt: o.openedAt,
       }));
     },
   );
@@ -842,6 +1042,36 @@ export async function readStats(register?: string): Promise<ReadResult<Stats>> {
     register,
   );
 }
+/** Registers (lowercase) that answered they have no seller() view: asked once, then never again. */
+const withoutSellerView = new Set<string>();
+
+/**
+ * One seller's record from seller(address). `data` is null on a register deployed before seller
+ * records existed (the page then says so, or adds up what the listings show); an address that
+ * never listed is a record with known false and zeros.
+ */
+export async function readSeller(address: string, register?: string): Promise<ReadResult<SellerRecord | null>> {
+  if (isMock) return mock.readSeller(address);
+  const a = address.trim().toLowerCase();
+  const reg = (register || contractAddress()).toLowerCase();
+  if (reg && withoutSellerView.has(reg)) return { data: null, source: "chain" };
+  try {
+    return await withSnapshot(
+      async () => {
+        const v = await view("seller", [a], register, { optional: true });
+        if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(NETWORK_ERROR);
+        return mapSeller(v as Row, a);
+      },
+      (s) => s.sellers?.[a] ?? null,
+      register,
+    );
+  } catch (e) {
+    if (!(e instanceof Error && e.message === NO_SUCH_VIEW)) throw e;
+    if (reg) withoutSellerView.add(reg);
+    return { data: null, source: "chain" };
+  }
+}
+
 export async function readBondFor(listing: string): Promise<string> {
   if (isMock) return mock.readBondFor(listing);
   try {
@@ -852,10 +1082,7 @@ export async function readBondFor(listing: string): Promise<string> {
     const b = s?.bonds?.[listing];
     if (b) return atto(b);
     const l = s ? byId(s.listings, listing) : null;
-    if (l) {
-      const bond = (BigInt(l.priceAtto) * 20n) / 100n;
-      return (bond < 10n ** 16n ? 10n ** 16n : bond).toString();
-    }
+    if (l) return bondOf(l.priceAtto).toString();
     throw e;
   }
 }
@@ -879,7 +1106,31 @@ export type WriteFn =
   | "report_missing"
   | "reveal"
   | "refund_missing"
-  | "settle_stale";
+  | "settle_stale"
+  | "withdraw_stake";
+
+/** One write, ready for useTx().start(fn, args, value). */
+export type WriteCall = { fn: WriteFn; args: string[]; value?: bigint };
+
+/**
+ * list_pack with its stake. The stake is the value of the call (v2: payable, at least one
+ * slice). `stakeAtto` null lists on a register deployed before stakes, whose list_pack takes no
+ * value.
+ */
+export function listPackCall(
+  p: { title: string; kind: string; promises: string[]; hashes: string[]; priceAtto: bigint; windowSeconds: string },
+  stakeAtto: bigint | null,
+): WriteCall {
+  return {
+    fn: "list_pack",
+    args: [p.title, p.kind, JSON.stringify(p.promises), JSON.stringify(p.hashes), p.priceAtto.toString(), p.windowSeconds],
+    value: stakeAtto ?? undefined,
+  };
+}
+/** The seller stops new orders; with nothing open, the whole stake comes back in the same call. */
+export const closeListingCall = (listingId: string): WriteCall => ({ fn: "close_listing", args: [listingId] });
+/** A closed listing with no open orders: the rest of the stake goes back to the seller. */
+export const withdrawStakeCall = (listingId: string): WriteCall => ({ fn: "withdraw_stake", args: [listingId] });
 
 /** Sends a transaction through the connected EIP-1193 provider. Resolves to the tx hash. */
 export async function write(

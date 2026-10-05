@@ -12,8 +12,10 @@ const money = (r: LedgerRow) => {
   const b = BigInt(r.paidBuyer || "0");
   const s = BigInt(r.paidSeller || "0");
   if (b === 0n && s === 0n) return r.status === "paid" || r.status === "disputed" || r.status === "missing" ? `${gen(r.priceAtto)} in escrow` : "—";
+  const fromStake = BigInt(r.paidFromStake || "0");
   const parts: string[] = [];
-  if (b > 0n) parts.push(`${gen(b)} → buyer`);
+  // a breaks verdict or an unrevealed section also pays one slice of the seller's stake
+  if (b > 0n) parts.push(`${gen(b)} → buyer${fromStake > 0n ? ` (${gen(fromStake)} from the seller's stake)` : ""}`);
   if (s > 0n) parts.push(`${gen(s)} → seller`);
   return parts.join(", ");
 };

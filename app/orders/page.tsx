@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, BellRing, Coins, Info, RefreshCw, Upload } from "lucide-react";
 
 import { LedgerTable } from "@/components/ledger-table";
+import { BackingLine, StakeControls } from "@/components/stake";
 import { BlockSkeleton, ReadBlock, readEach } from "@/components/read-state";
 import { YourRegisterNotice } from "@/components/register-line";
 import { StatusBadge } from "@/components/status-badge";
@@ -60,6 +61,8 @@ type Mine = {
   details: Record<string, Order>;
   /** reads that did not answer on this visit */
   failed: number;
+  /** listing id → one slice of its stake (atto), for every listing on a register with stakes */
+  slices: Record<string, string>;
 };
 
 const orderNo = (id: string) => Number(id.replace(/^\D+/, "")) || 0;
@@ -145,7 +148,10 @@ async function readMine(address: string) {
     else boughtUnread.push(id);
   }
 
-  const data: Mine = { bought, boughtUnread, listings, sales, salesUnread, details, failed };
+  const slices: Record<string, string> = {};
+  for (const l of all.data) if (l.stakeKnown) slices[l.id] = l.sliceAtto;
+
+  const data: Mine = { bought, boughtUnread, listings, sales, salesUnread, details, failed, slices };
   return { data, source: snapshot ? "snapshot" : "chain" } as const;
 }
 
@@ -191,6 +197,8 @@ const TONE_RANK: Record<Action["tone"], number> = { urgent: 0, act: 1, info: 2 }
 function actionsOf(m: Mine, now: number): Action[] {
   const out: Action[] = [];
   const pack = (r: LedgerRow) => r.title || r.listing;
+  // What an unrevealed section adds to the buyer's refund: one slice of the seller's stake.
+  const plusSlice = (r: LedgerRow, whose: string) => (m.slices[r.listing] ? `, plus one slice of ${whose} stake (${gen(m.slices[r.listing])})` : "");
   for (const l of m.listings) {
     for (const r of m.sales[l.id]) {
       const d = m.details[r.id];
@@ -205,7 +213,7 @@ function actionsOf(m: Mine, now: number): Action[] {
             text: (
               <>
                 The {REVEAL_HOURS} hours to reveal {section} of {pack(r)} have passed. Anyone can now refund the buyer&apos;s{" "}
-                {gen(r.priceAtto)} in full.
+                {gen(r.priceAtto)} in full{plusSlice(r, "your")}.
               </>
             ),
             cta: `Open ${r.id}`,
@@ -219,12 +227,12 @@ function actionsOf(m: Mine, now: number): Action[] {
               <>
                 The buyer reports {section} of {pack(r)} missing. Put its exact text on chain by{" "}
                 <strong>{when(deadline)}</strong> ({countdown(deadline, chainTime(d!, now))}), or the buyer gets the full{" "}
-                {gen(r.priceAtto)} back.
+                {gen(r.priceAtto)} back{plusSlice(r, "your")}.
               </>
             ) : (
               <>
                 The buyer reports {section} of {pack(r)} missing. You have {REVEAL_HOURS} hours from the report to put its exact
-                text on chain, or the buyer gets the full {gen(r.priceAtto)} back.
+                text on chain, or the buyer gets the full {gen(r.priceAtto)} back{plusSlice(r, "your")}.
               </>
             ),
             cta: `Reveal on ${r.id}`,
@@ -289,7 +297,7 @@ function actionsOf(m: Mine, now: number): Action[] {
           text: (
             <>
               The seller did not put {section} of {pack(r)} on chain within {REVEAL_HOURS} hours. Take your full{" "}
-              {gen(r.priceAtto)} refund on the order page.
+              {gen(r.priceAtto)} refund{plusSlice(r, "the seller's")} on the order page.
             </>
           ),
           cta: `Refund on ${r.id}`,
@@ -302,12 +310,12 @@ function actionsOf(m: Mine, now: number): Action[] {
           text: deadline ? (
             <>
               You reported {section} of {pack(r)} missing. The seller has until {when(deadline)} ({countdown(deadline, chainTime(d!, now))})
-              to put it on chain; if they do not, you take a full refund.
+              to put it on chain; if they do not, you take a full refund{plusSlice(r, "the seller's")}.
             </>
           ) : (
             <>
               You reported {section} of {pack(r)} missing. The seller has {REVEAL_HOURS} hours from the report to put it on chain; if
-              they do not, you take a full refund.
+              they do not, you take a full refund{plusSlice(r, "the seller's")}.
             </>
           ),
           cta: `Open ${r.id}`,
@@ -383,10 +391,11 @@ function NextSteps({ actions, live, onChanged }: { actions: Action[]; live: bool
 function saleNote(r: LedgerRow, d: Order | undefined, now: number): string {
   const toBuyer = BigInt(r.paidBuyer || "0");
   const toSeller = BigInt(r.paidSeller || "0");
+  const fromStake = BigInt(r.paidFromStake || "0");
   if (toBuyer > 0n || toSeller > 0n) {
     const parts: string[] = [];
     if (toSeller > 0n) parts.push(`${gen(toSeller)} to you`);
-    if (toBuyer > 0n) parts.push(`${gen(toBuyer)} back to the buyer`);
+    if (toBuyer > 0n) parts.push(`${gen(toBuyer)} back to the buyer${fromStake > 0n ? ` (${gen(fromStake)} of it from your stake)` : ""}`);
     return parts.join(", ");
   }
   if (r.status === "paid" && d) {
@@ -420,6 +429,7 @@ function MyListing({
   unread,
   details,
   now,
+  live,
   onChanged,
 }: {
   l: Listing;
@@ -427,11 +437,10 @@ function MyListing({
   unread: string[];
   details: Record<string, Order>;
   now: number;
+  /** false when the rows came from the snapshot: nothing is signed against them */
+  live: boolean;
   onChanged: () => void;
 }) {
-  const tx = useTx((s) => {
-    if (s.applied && !failureOf(s)) onChanged();
-  });
   // Whether buyers can actually read the pack: the text must have reached the store (or be a demo pack).
   const [uploaded, setUploaded] = React.useState<boolean | null>(null);
   const hashKey = l.hashes.join(",");
@@ -467,15 +476,9 @@ function MyListing({
             {l.id} · {gen(l.priceAtto)} · window {windowLabel(l.windowSeconds)} · {l.orders} {l.orders === 1 ? "order" : "orders"}
           </p>
           <Tally kept={l.kept} broken={l.broken} unclear={l.unclear} className="mt-1" />
+          <BackingLine l={l} className="mt-1" />
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline">{l.open ? "open" : "closed"}</Badge>
-          {l.open ? (
-            <Button type="button" size="sm" variant="outline" disabled={tx.sending || (!!tx.hash && !tx.final)} onClick={() => void tx.start("close_listing", [l.id])}>
-              Close listing
-            </Button>
-          ) : null}
-        </div>
+        <Badge variant="outline">{l.open ? "open" : l.closedReason === "out_of_stake" ? "out of stake" : "closed"}</Badge>
       </div>
       {uploaded === false ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/40 bg-gold/10 p-3 text-xs">
@@ -490,13 +493,7 @@ function MyListing({
           </Button>
         </div>
       ) : null}
-      {tx.error ? <p className="mt-2 text-xs text-breaks">{tx.error}</p> : null}
-      {tx.hash ? (
-        <div className="mt-3">
-          <TxRail hash={tx.hash} label={`Closing ${l.id}`} onDone={tx.onDone} />
-          {tx.final && failureOf(tx.final) ? <p className="mt-2 text-xs text-breaks">{failureOf(tx.final)}</p> : null}
-        </div>
-      ) : null}
+      <StakeControls l={l} canAct={live} onChanged={onChanged} className="mt-3" />
       {shown.length === 0 && unread.length === 0 ? null : (
         <div className="mt-3 space-y-2 border-t pt-3">
           <p className="text-xs font-medium">Sales</p>
@@ -607,7 +604,14 @@ export default function OrdersPage() {
                   )}
                 </section>
                 <section className="space-y-3">
-                  <h2 className="text-lg font-semibold">Packs you listed ({m.listings.length})</h2>
+                  <div className="flex flex-wrap items-end justify-between gap-2">
+                    <h2 className="text-lg font-semibold">Packs you listed ({m.listings.length})</h2>
+                    {m.listings.length > 0 ? (
+                      <Link href={`/seller/${address.toLowerCase()}`} className="text-sm text-primary underline-offset-4 hover:underline">
+                        Your public seller page
+                      </Link>
+                    ) : null}
+                  </div>
                   {m.listings.length === 0 ? (
                     <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
                       Nothing listed from this wallet.{" "}
@@ -625,6 +629,7 @@ export default function OrdersPage() {
                           unread={m.salesUnread[l.id] ?? []}
                           details={m.details}
                           now={now}
+                          live={live}
                           onChanged={() => void state.refresh()}
                         />
                       ))}

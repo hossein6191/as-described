@@ -1,0 +1,142 @@
+deploy tx 0x0563fede73c2ee1b8e6a4719a78464e7b078624bde9575eb9ce1976ef453859e
+As Described at 0xE31e77984bce5623AB50c7CB5530a030B9173718 · phase ALL 
+seller 0x5E1556B15c77C8F734bb41A8Fd9c9721B6dbA586 · buyer 0x4569B81DAC9DE1d99a183485b8391B44Bb231A94 · stranger 0xd16290bCC69E351586dE64Bd0B9f43c0147c3C7D 
+
+      list_pack  0x18258bfd51d90cac281a15620adeb19cb4ae488a6346a0409defbfb8f56ae8d4  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  a two-letter title is refused, and the stake comes back  — a title is 3 to 60 characters; your funds were returned
+      list_pack  0xb7a45d15b6d9ef48dc875048521fd6e5fa1b043944073ffbb713e93d7f2237c8  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  a hash that is not 64 lowercase hex is refused, and the stake comes back  — each hash is the sha256 of one section: 64 lowercase hex characters; your funds 
+      list_pack  0xa2fa40f5d087806aa1b0bd7595e22f65aafd79c1207465bf619993bf2bc4e647  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  a price below 0.1 GEN is refused, and the stake comes back  — the price is a whole number of atto between 100000000000000000 (0.1 GEN) and 100
+      list_pack  0xf7a0409943b27d6569ae74b7198e181f58556a1146f523512bd83583c4d3007d  4 agree, 0 disagree, 1 idle  SUCCESS
+PASS  a promise that spans two lines is refused, and the stake comes back  — each promise is one line, with no line breaks; your funds were returned
+      list_pack  0xdb1ef0ebf53188506a405db8e5f7a19ad97a4aa7ebd8eb35e7bb853feee33d61  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  a stake below one slice (half the price) is refused, and the stake comes back  — send a stake of at least one slice, 50% of the price: 500000000000000000 atto; e
+      list_pack  0x29ffc29d03f23a61b78e04a1eb520b11589edab399f2012e61f1d37737cb104a  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  pack 1 is listed with a contract-assigned id  — L1 · 3 agree, 0 disagree, 2 idle
+PASS  it is listed with the minimum stake, one slice of half the price, so it backs one open order  — stake 500000000000000000, slice 500000000000000000, capacity 1
+      buy  0x4af35fa4fd0766edd3a0c319cecc99a84613b06764f41a2dc6316a513a3ba57d  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  buy with the wrong value is refused, and the record says so  — send exactly the price: 1000000000000000000 atto; your funds were retu
+PASS  the refund is real: the buyer's balance is back where it was
+      buy  0x55fddf56730793a75f99ec1e050532be1b728a3a7aa7e4d5f3311250498d2991  4 agree, 0 disagree, 1 idle  SUCCESS
+PASS  buy pack 1 for 1 GEN opens an order  — O1 · deadline 2026-10-08T12:29:03Z
+PASS  bond_for reads the bond with no model  — 200000000000000000
+      open_dispute  0xa7536b1efebb03e14a025030b10b64ad0bbb469c871e0c7f5619a216aa93f6b7  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  a stranger cannot dispute, and the bond comes back  — only the buyer of this order may dispute it; your funds were
+      open_dispute  0x94d509da3515bb055b82b7f79b3bac1f4105f52678c8ad975e973841abd186fa  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer disputes recipe 5 against promise 1 with the bond  — 3 agree, 0 disagree, 2 idle
+      judge  0x51250c72dcdea1ea6c4c07a9ff0855ebac2a6975c95e58c77afa0f5f5d8ec037  5 agree, 0 disagree, 0 idle  ERROR
+PASS  judge with a text that does not hash to the commitment is refused  — [EXPECTED] the text does not match the hash the seller committed for section 5
+      judge  0x90d85c2be17b89a798d32efba4e5de3ee5ba4a14830d5601bfea27d33a4da272  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the validators judge recipe 5 and agree  — 3 agree, 0 disagree, 2 idle → breaks (break: yes, keep: no)
+PASS  bacon breaks the vegetarian promise
+PASS  and the buyer received the price, the bond and one slice of the seller's stake  — +170 / 100 GEN
+PASS  order view: settled, verdict breaks, paid_buyer 1.7 GEN of which 0.5 GEN from the stake
+PASS  the contract wrote the sentence for this order  — A majority of the validators found that section 5 breaks promise 1, so the buyer got the price, the bond and one slice of the seller's stake (0.5 GEN) back: 1.7
+PASS  the slash took pack 1's only slice, so it closed itself out of stake  — stake 0, paid 500000000000000000, out_of_stake
+      buy  0x02592b6d6218d42319e0cd1baba66315484aeb0c9849587955331aa8c0941c3b  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  a listing out of stake sells nothing more, and the price comes back  — this listing is closed; your funds were returned
+PASS  the sentence carries no text from the pack
+      judge  0x4a3e100d361f33177087630bdb6a032d9d1888eec1723ecab5364ff374fa9b13  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a verdict is final
+PASS  the oversize section is past the contract's cap  — 12283 characters, 12283 bytes of calldata
+      list_pack  0x84251f1632a91f7e2989a1d2945c5bf4f6deb646c399251f1aa5a6d8fce1ed41  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  a pack may commit a hash of a section longer than the cap  — L2 · list_pack takes hashes only
+      buy  0x8a3ec678a6f231f338625f9c19af79e6a7eb8762b1b32788a2bffd9ac0651a79  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  buy pack 4  — O2
+      close_listing  0xc314a48ed6ebd5b807e9ed9b43d87b88a7f4f099afe17f080a086c14f997cba6  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  the seller closes pack 4 while its order is open: the stake stays behind that order  — 5 agree, 0 disagree, 0 idle
+      withdraw_stake  0xea3350a1478d8d75155ef19c8e8c5deb3f406b3539d2c6809dfe71b1d2e38072  5 agree, 0 disagree, 0 idle  ERROR
+PASS  withdraw_stake waits for the open order to end  — [EXPECTED] the stake still backs 1 open order(s); it comes back when the last on
+      open_dispute  0x5a9fb1351b3754b47148c4f36647ebb3e1d0998e758a90c17df4bffb400bf0f7  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer disputes the wrong section first
+      withdraw_dispute  0x84d5f236fad05ca326c4761fe39d309b7039535a4e2b41d986d6de0ee8b01c23  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a stranger cannot withdraw somebody else's dispute  — [EXPECTED] only the buyer of this order may withdraw its dispute
+      withdraw_dispute  0x45d4272b681cfa3287f454b31fd564c8339bfa5b80de8a00cda44a655db49dd0  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer withdraws, the order is paid again and the bond comes back  — 3 agree, 0 disagree, 2 idle
+PASS  the bond is really back in the buyer's wallet
+PASS  the withdrawn order keeps its deadline and holds no bond  — paid · deadline 2026-10-08T12:34:35Z
+      withdraw_dispute  0xceb906a3f846c58bd72057e0c1d0c03179cb2a87b5cffa488cd2de686a985c82  3 agree, 0 disagree, 2 idle  ERROR
+PASS  a paid order has no dispute to withdraw  — [EXPECTED] only a disputed order can be withdrawn; this one is paid
+      open_dispute  0xc65d56e6fa476adb71ba56308b3a0f45efe8800e754f842e4a245957af9d6e15  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer disputes again, this time the oversize chapter  — 3 agree, 0 disagree, 2 idle
+      judge  0x207c3d9c476cb123e150c07cac8ef7b678588b665855994a6f3adc62c2ef0962  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  a judge transaction carries the whole oversize section  — 12283 bytes of argument · 3 agree, 0 disagree, 2 idle
+PASS  it is settled breaks by rule, with no validator asked  — by_rule true, answers ""/""
+PASS  and the buyer received the price, the bond and one slice of the stake  — +85 / 100 GEN
+PASS  the contract's sentence says it was decided by rule, not by the validators  — Section 3 is longer than the 4000 characters a section may have, so the dispute was settled as breaks by rule, without asking the validators: the buyer got the 
+PASS  pack 4 paid one slice, keeps the seller's reason for closing, and holds no open order  — stake 250000000000000000, paid 250000000000000000, seller
+      withdraw_stake  0x3116aec6022b8bd6508bf17bacbb8a7f6e1067d302889fdd6e56d47c3f44acf9  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  withdraw_stake returns what is left of the stake once the order has ended  — 3 agree, 0 disagree, 2 idle
+      list_pack  0xbbb105255f73744a380d5661e96286b44303a84ce4ea21abe0bf252c39f721f1  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  pack 2 is listed  — L3
+      buy  0xedbcc7d475346a18ed0aa668d37277c9c6821c66732b7696c1e1c008c50ca9cf  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  buy pack 2  — O3
+      open_dispute  0xdab182b17319cb288981a510550da9faa467308088edbc47196fa830116f2dd8  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the buyer disputes recipe 3 against the 30-minute promise  — 3 agree, 0 disagree, 2 idle
+      judge  0x8bdc41d89f8a61dfdb5a3ad17eb31e93d89941a64ee6056c50a8c54a09226865  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the validators judge recipe 3 and agree  — 3 agree, 0 disagree, 2 idle → keeps (break: no, keep: yes)
+PASS  a 15-minute recipe keeps the 30-minute promise
+PASS  and the seller received the price plus the bond  — +120 / 100 GEN
+PASS  the contract wrote a sentence naming section 3, promise 2 and what the validators said  — A majority of the validators found that section 3 keeps promise 2, so the seller got the price and the bond: 1.2 GEN.
+      close_listing  0xdf4a1628d1734f310c5cc64fa042ce566a3fbd4470d8aac7cb6c6814c2f5279e  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  closing pack 2 with nothing open returns the whole stake in the same call  — 3 agree, 0 disagree, 2 idle
+      withdraw_stake  0x0e783c91474daf8ad37d38cc3a529a3ba7c49f9edb36ac71bfdb435676510a3a  3 agree, 0 disagree, 2 idle  ERROR
+PASS  and there is nothing left to withdraw  — [EXPECTED] this listing has no stake left to withdraw
+      list_pack  0x544b1fbf848ddd315546b2f39e5592a464aa06c710181573fcdf113bc64d5de1  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  pack 3 is listed with a 300 s window  — L4
+      buy  0x44d17d76428011983945783d9eadd98ace498820b86eaca2350b0f41fbf7a923  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  buy pack 3  — O4 · deadline 2026-10-05T12:51:10Z
+      release  0x9c3be2c67eb64128c9fa7edb39acdf9aeaec856a8b1a42143fd5ee470fd9c92d  3 agree, 0 disagree, 2 idle  ERROR
+PASS  release before the deadline is refused  — [EXPECTED] the dispute window is open until 2026-10-05T12:51:10Z
+      buy  0x1366c83bf617e18cb778b6f335884138b6a1de34b4ca3521fbf92372582d7380  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  a second order on pack 3  — O5
+      buy  0xc400e2e88e196e5b370f9a9ca07f74af08248327a80ca03ce449009331a7e9b4  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  a third order is refused while two are open: the stake backs two at a time, and the price comes back  — this listing's stake backs 2 open orders at a time and all 2 are taken; try again when one ends; you
+      report_missing  0x67c8277540ecdd73c9b2c8a964d2802d04d225def720f3154d43932a4870f15f  3 agree, 0 disagree, 2 idle  ERROR
+PASS  a stranger cannot report a section missing
+      report_missing  0xd3ae118cce7899144d4c0556761672a0db56602a5ff3224cbcedffb14a658ff3  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  the buyer reports template 2 missing
+      reveal  0x382b77715422281527a9b3dc6505a5aa273b38f74f43eed45066fd773f57e076  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a reveal that does not hash to the commitment is refused
+      reveal  0xecfdf371c2c461e84ee04a9f1cb921a6fdc85a82f76e90972457f323c550c87d  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the seller reveals template 2 and the order is paid again  — deadline now 2026-10-06T12:50:57Z
+PASS  order view: paid, the revealed text is on chain, the deadline moved out by a day
+PASS  the order lists the revealed section
+      report_missing  0x03d19e9c7e85ed5c6976e372de79b77fffaf0ec6ac529c2a592202183a3b2737  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a section already on chain can never be reported missing again  — [EXPECTED] section 2 is already on chain; read it from the order
+      report_missing  0x4e02998659c9797ae738fae2ad8a83a787b51c46fc313bece02046cefde1afec  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  a second, different section may still be reported
+      reveal  0x478953ed40ff6d4c6376afabf12be9289c354c44ab2ba94850d2fbc6ef231853  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  the seller reveals template 4 too
+PASS  both revealed sections are listed by index
+      report_missing  0xc266b7ac4706ac88e192a3a5211f5470469fd634a3fdd206a31f85d1b78529d2  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  a third section may be reported, and the order says none is left
+      reveal  0x80e0925298835024a88e6d7985703cb0e20956bb9f829b01a0c7f126c165b979  5 agree, 0 disagree, 0 idle  SUCCESS
+PASS  the seller reveals template 1 too
+      report_missing  0x0b5e390298a4fad18322b4d1cefad0e13fd660c9f8d2d830b234a083a679355b  5 agree, 0 disagree, 0 idle  ERROR
+PASS  a fourth section cannot be reported: the walk through the pack is capped  — [EXPECTED] a buyer reports at most 3 sections missing per order; a pack that did not arriv
+PASS  the order view counts the reports and what is left
+      release  0x6aab47ab6fad48095c8cf3ca3ea8da7e9d37e3745eb02f94693f412f994364e4  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  release after the deadline pays the seller  — 3 agree, 0 disagree, 2 idle
+PASS  and the seller received 0.5 GEN
+PASS  the contract wrote the sentence for the released order  — The dispute window closed with no dispute, so the seller got the price: 0.5 GEN.
+PASS  stats reads the counters  — {"listings":4,"orders":5,"kept":1,"broken":2,"unclear":0,"refunded":0,"released":1,"stale":0,"stake_held":"500000000000000000","stake_paid":"750000000000000000","sellers":1}
+PASS  listings reads every pack in one call  — total 4, 4 rows
+PASS  its first row is the first listing, exactly as listing() returns it
+PASS  a page of one starts where the offset says  — L4
+PASS  a limit that is not a number reads the whole page
+PASS  an offset past the end reads no rows
+PASS  ledger reads the last orders newest first  — O5:paid O4:released O3:settled O2:settled O1:settled
+PASS  the rules are published by the contract
+      close_listing  0x67d75781283bdfab17ab93d25fdc180e9bf9a919db6fc8eeaad77c043891484a  3 agree, 0 disagree, 2 idle  SUCCESS
+PASS  closing pack 3 with an order still open keeps the stake behind it  — 3 agree, 0 disagree, 2 idle
+PASS  the listing row says it was closed by the seller and still holds its stake  — stake 500000000000000000, 1 open
+PASS  seller(): the record counts exactly what this run did  — listed 4/4, sold 5/5, released 1/1, kept 1/1, broken 2/2, unclear 0/0
+PASS  seller(): staked and stake_paid add up over the seller's own listings  — staked 500000000000000000, paid 750000000000000000
+PASS  seller(): an address that never listed is unknown, with zeros
+PASS  stats(): stake_held and stake_paid are the sums over every listing  — held 500000000000000000, paid 750000000000000000, 1 sellers
+
+86 passed, 0 failed
+contract: 0xE31e77984bce5623AB50c7CB5530a030B9173718
+

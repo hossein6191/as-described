@@ -301,6 +301,13 @@ async function waitText(page, needle, timeout = READ_TIMEOUT) {
     re,
   );
 }
+/** The sell page keeps List disabled until stats() says whether the register takes a stake. */
+async function waitListReady(page) {
+  await page.waitForFunction(
+    () => Array.from(document.querySelectorAll("button")).some((b) => /^List for /.test((b.innerText || "").trim()) && !b.disabled),
+    { timeout: READ_TIMEOUT, polling: 500 },
+  );
+}
 /** The first visible element of `tag` whose text contains `text`; scrolls it into view. */
 async function findByText(page, tag, text, { exact = false, within = null } = {}) {
   const handle = await page.evaluateHandle(
@@ -664,6 +671,7 @@ async function listDemo(page, { title, kind, price }) {
   observe(`demo card "${title}" filled price=${priceText} GEN, window="${windowText}"`);
   await shot(page, "sell-form-filled");
   const signsBefore = await page.evaluate(() => window.__fakeWallet.calls.personal_sign || 0);
+  await waitListReady(page);
   await click(page, "button", `List for ${price}`);
   const sent = await page.waitForFunction(() => !!document.querySelector("[data-tx]") || Array.from(document.querySelectorAll("p")).some((p) => /text-breaks/.test(p.className) && p.innerText.trim()), { timeout: 60_000 }).then(() => true).catch(() => false);
   if (!sent) throw new Error("no transaction rail and no error appeared within 60 s of pressing List");
@@ -705,6 +713,7 @@ async function listCustom(page, pack) {
   // A host with no pack store can only list demo packs, and the page says so instead of listing.
   const blocked = /no storage for uploaded packs|no pack store|only demo packs/i.test(await bodyText(page));
   if (blocked) throw new Error("this deployment has no pack store, so a pack of our own cannot be listed here");
+  await waitListReady(page);
   await click(page, "button", `List for ${pack.price} GEN`);
   const rail = await waitRail(page, "Listing the pack");
   observe(`list_pack (our own pack) rail (${rail.seconds.toFixed(0)} s): ${rail.text}`);

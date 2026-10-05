@@ -15,16 +15,21 @@ import assert from "node:assert/strict";
 
 import {
   CHECKS_PER_MINUTE,
+  LISTING_COUNT_RECHECK_MS,
   LOOKUPS_PER_CALLER,
   LOOKUPS_PER_MINUTE,
   MAX_CALLERS,
+  PUBLIC_READS_PER_CALLER,
+  PUBLIC_READS_PER_MINUTE,
   READS_PER_MINUTE,
   SHARED_CALLER,
+  beyondListings,
   callerOf,
   createBoundedMemo,
   takeChainRead,
   takeDeliveryCheck,
   takeLookup,
+  takePublicRead,
 } from "../../lib/budget.ts";
 
 /** A minute nothing else in this file uses, so the rolling windows start empty. */
@@ -128,4 +133,33 @@ test("a remembered answer is bounded, and a stale one is forgotten rather than s
   assert.ok(memo.size() <= 3, `size ${memo.size()}`);
   assert.equal(memo.recalled("c"), null);
   assert.deepEqual(memo.recalled("f"), { kind: "ours" });
+});
+
+test("the public listing reads (embed, badge, JSON) are capped per caller and per instance", () => {
+  const now = freshMinute();
+  for (let i = 0; i < PUBLIC_READS_PER_CALLER; i++) assert.equal(takePublicRead("198.51.100.20", now), true, `read ${i + 1}`);
+  // A loop over made-up listing ids from one address stops here; another reader still gets through.
+  assert.equal(takePublicRead("198.51.100.20", now), false);
+  assert.equal(takePublicRead("198.51.100.21", now), true);
+  let taken = PUBLIC_READS_PER_CALLER + 1;
+  for (let i = 0; i < PUBLIC_READS_PER_MINUTE + 20; i++) if (takePublicRead(`${now}-reader-${i}`, now)) taken++;
+  assert.equal(taken, PUBLIC_READS_PER_MINUTE);
+  // Each read is up to two view calls, and the listing count is read at most once per recheck:
+  // the instance stays inside Studio's 30 gen_call a minute.
+  assert.ok(PUBLIC_READS_PER_MINUTE * 2 + 60_000 / LISTING_COUNT_RECHECK_MS < 30);
+  assert.equal(takePublicRead(`${now}-reader-late`, now + 60_001), true); // the window rolls off
+});
+
+test("an id the register cannot hold is told apart from the count alone, with no read", () => {
+  // Within the count: a listing the contract wrote, read as usual.
+  assert.equal(beyondListings("L1", 3), false);
+  assert.equal(beyondListings("L3", 3), false);
+  // Above it: made-up ids, however many, cost nothing.
+  assert.equal(beyondListings("L4", 3), true);
+  assert.equal(beyondListings("L900001", 3), true);
+  assert.equal(beyondListings("L1", 0), true);
+  // Ids the contract never writes, whatever the count: no listing is L0, and none has a leading zero.
+  for (const id of ["L0", "L01", "L0003", "l1", "L", "L1x", " L1"]) {
+    assert.equal(beyondListings(id, Number.POSITIVE_INFINITY), true, id);
+  }
 });
