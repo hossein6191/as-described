@@ -187,3 +187,6 @@ export const KIND_GRADIENT: Record<string, string> = {
 
 export const kindEmoji = (kind: string) => KIND_EMOJI[kind] ?? KIND_EMOJI.other;
 export const kindGradient = (kind: string) => KIND_GRADIENT[kind] ?? KIND_GRADIENT.other;
+
+/** An order id as people read it: "O7" becomes "#7", because a capital O reads as a zero in most fonts. */
+export const orderNo = (id: string): string => (/^O\d+$/.test(id) ? "#" + id.slice(1) : id);

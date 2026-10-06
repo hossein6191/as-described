@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
-import { short, when } from "@/lib/format";
+import { orderNo, short, when } from "@/lib/format";
 
 const CheckCircleIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -209,7 +209,7 @@ const AnimatedTicket = React.forwardRef<HTMLDivElement, TicketProps>(
             <div className="grid grid-cols-2 gap-4 text-left">
               <div>
                 <p className="text-xs text-muted-foreground uppercase">Order</p>
-                <p className="font-mono font-medium">{orderId}</p>
+                <p className="font-mono font-medium">{orderNo(orderId)}</p>
               </div>
               <div className="text-right">
                 <p className="text-xs text-muted-foreground uppercase">Amount</p>

@@ -132,7 +132,7 @@ function chainIso(iso: string, hours = 0): string {
 /**
  * The bond the buyer posted with the dispute. The order view says bond_required "0" once the order
  * is not paid, and the contract zeroes `bond` when it pays out, so a settled order's bond is read
- * back from the payouts: breaks paid price + bond to the buyer, keeps paid it to the seller, and
+ * back from the payouts: breaks paid price + bond (+ a slice of the stake) to the buyer, keeps paid it to the seller, and
  * unclear or a settlement by rule returned the bond alone.
  */
 function postedBond(o: Order): bigint {
@@ -143,7 +143,11 @@ function postedBond(o: Order): bigint {
   const toSeller = BigInt(o.paidSeller || "0");
   if (o.status === "settled_stale") return toBuyer;
   if (o.status !== "settled") return 0n;
-  if (o.verdict === "breaks") return toBuyer > price ? toBuyer - price : 0n;
+  // breaks paid price + bond + the slice from the seller's stake; the slice is not part of the bond.
+  if (o.verdict === "breaks") {
+    const rest = toBuyer - price - BigInt(o.paidFromStake || "0");
+    return rest > 0n ? rest : 0n;
+  }
   if (o.verdict === "keeps") return toSeller > price ? toSeller - price : 0n;
   return toBuyer;
 }

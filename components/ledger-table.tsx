@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import type { LedgerRow } from "@/lib/chain";
 import { addressUrl } from "@/lib/chain";
-import { ago, gen, short, statusWord } from "@/lib/format";
+import { ago, gen, orderNo, short, statusWord } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +50,7 @@ export function LedgerTable({ rows, className, showTitle = true }: { rows: Ledge
               <tr key={r.id} className="border-t align-top">
                 <td className="px-3 py-2 font-mono">
                   <Link href={`/order/${r.id}`} className="text-primary underline-offset-4 hover:underline">
-                    {r.id}
+                    {orderNo(r.id)}
                   </Link>
                 </td>
                 {showTitle ? (
@@ -83,7 +83,7 @@ export function LedgerTable({ rows, className, showTitle = true }: { rows: Ledge
           <li key={r.id} className="rounded-xl border bg-card p-3 text-sm">
             <div className="flex items-start justify-between gap-2">
               <Link href={`/order/${r.id}`} className="font-mono text-primary underline-offset-4 hover:underline">
-                {r.id}
+                {orderNo(r.id)}
               </Link>
               <StatusBadge status={r.status} verdict={r.verdict} />
             </div>
