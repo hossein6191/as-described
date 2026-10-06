@@ -372,6 +372,12 @@ address that never listed answered `known: false` with zeros. Everything version
 hash checks, both framings, withdraw_dispute, the missing → reveal walk and its cap, release
 before and after the deadline, listings and ledger paging) ran again on this register and passed.
 
+Then the live site was used from an ordinary browser wallet on 7 October 2026, through its own buttons:
+order O6 on L5, section 1 against promise 3, was judged `keeps` and the seller got 1.2 GEN
+([0x0f077da0…](https://explorer-studio.genlayer.com/tx/0x0f077da0acacbe1f86b4583768b034fc3c7ae6263fcef12af4d60b2d8de7f2cc));
+order O7 on L5, section 5 against promise 1, was judged `breaks` and the buyer got 1.7 GEN, 0.5 GEN of it
+from the seller's stake ([0x6d9dd24d…](https://explorer-studio.genlayer.com/tx/0x6d9dd24dd58be8c5f15aa21dd6ef51dce5a6e8abf4fbd8baf0fa58fd6e0d66d8)).
+
 After the run, eight demo packs were listed from one demo seller key with a stake of twenty
 slices each (ten times the price), so twenty buyers at a time can try each one: L5 to L12, the
 shop's demo packs, beginning with the vegetarian recipe pack whose recipe 5 breaks a promise.
