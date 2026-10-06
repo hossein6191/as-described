@@ -261,7 +261,7 @@ contracts/as_described.py     the Intelligent Contract (old-SDK runner 1jb45…,
 public/contracts/…            the same file, served by the site's /deploy page (a test keeps them identical)
 tests/test_pure.py            98 offline tests with a stub runtime; no network
 tests/MUTATIONS.md            151 defences removed or inverted one at a time, every mutant killed (tools/mutate.py)
-tests/unit/                   19 node tests for the site's retry, cooldown, read-cache and budget helpers, and the badge
+tests/unit/                   26 node tests for the site's retry, cooldown, read-cache and budget helpers, the badge and the demo packs
 tests/on_chain/smoke.mjs      throwaway-account run against Studio; results in tests/on_chain.md
 tests/site/e2e.mjs            the whole journey through a browser against a throwaway register
 app/, components/, lib/       the Next.js site (shop, pack, order, sell, ledger, orders, seller, deploy)
@@ -269,7 +269,7 @@ app/api/packs/[id]/…          the delivery API (signed upload, signed read, st
 app/embed/[id], app/api/badge/[id], app/api/listing/[id]
                               a listing for other websites: an iframe card, an SVG badge, public JSON (docs/API.md)
 docs/                         CONTRACTS.md · DECISIONS.md · API.md · BRAND.md
-lib/demo-packs.ts             nineteen demo packs, three or more per kind, real content (most with one quiet broken promise)
+lib/demo-packs.ts             thirty-six demo packs, six per kind, real content (most with one quiet broken promise)
 ```
 
 ## Running it

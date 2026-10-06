@@ -1,4 +1,4 @@
-// The demo packs the owner's seller wallet lists. Real content: the sections below are
+// The demo packs the demo seller lists. Real content: the sections below are
 // what a buyer receives, and what the validators read when a section is disputed.
 //
 // Pack 1: recipe 5 breaks promise 1 (it has bacon). Pack 2 is the honest twin (smoked tofu).
@@ -11,6 +11,14 @@
 // example), 13 Spanish verbs (honest), 14 journal prompts (prompt 5 is not a question), 15 interview prompts
 // (honest), 16 houseplants (plant 4 never says how often to water), 17 Kyoto (honest), 18 a card game
 // (honest), 19 commit messages (rule 6 has no example).
+// Packs 20 to 36 bring every kind to six: 20 lunchboxes (recipe 4 takes 35 minutes), 21 one-pan dinners
+// (recipe 3 boils its pasta in a second pot), 22 slow-cooker meals (honest, 5-minute window), 23 landlord
+// repair requests (honest), 24 apology emails (template 4 offers a discount code), 25 chemistry cards (card 3
+// has no Key term line), 26 first aid (card 3 is not a numbered list), 27 world capitals (honest, 5-minute
+// window), 28 poetry prompts (prompt 4 sets no number of lines), 29 dialogue prompts (prompt 3 names three
+// people), 30 student journaling (honest), 31 Porto (stop 4 gives no price), 32 a day hike (step 5's checklist
+// has two items), 33 a museum visit (honest), 34 board game house rules (rule 5 has no Why line), 35 keyboard
+// shortcuts (card 5 gives the Ctrl versions only), 36 shared kitchen rules (honest, 5-minute window).
 //
 // Every promise is written to be read literally: in each pack the named section breaks the named
 // promise and nothing else breaks anything, and word limits sit well above the longest section.
@@ -1240,6 +1248,986 @@ Example:
   a trailing space that failed every webhook silently. Now the URL
   is parsed on save and the form shows the problem straight away.`;
 
+// ---- Pack 20: six packed lunches. Recipe 4 takes 35 minutes. ----
+
+const LUNCHBOX_PROMISES = [
+  "Every recipe states a total time, and it is 20 minutes or less.",
+  "Every recipe has a 'Keeps:' line saying how many days it lasts in the fridge.",
+  "Every recipe makes 2 lunchbox portions.",
+];
+
+const lunch1 = `Recipe 1: Chickpea, cucumber and feta salad
+Total time: 15 minutes. Makes 2 lunchbox portions.
+
+Ingredients: 1 tin chickpeas (drained and rinsed), half a cucumber, 10 cherry tomatoes, half a red onion, 100 g feta, a handful of parsley, 3 tbsp olive oil, 1 tbsp red wine vinegar, 1 tsp dried oregano, salt, black pepper.
+
+1. Slice the onion as thinly as you can and leave it in the vinegar with a pinch of salt while you do everything else; it loses its harsh edge in ten minutes.
+2. Dice the cucumber, halve the tomatoes and chop the parsley.
+3. Tip the chickpeas, cucumber, tomatoes and parsley into a large bowl. Add the onion with its vinegar, the oil and the oregano, season and toss.
+4. Divide between two boxes and crumble the feta over the top of each, so it stays in pieces instead of clouding the dressing.
+
+Keeps: 3 days in the fridge in a sealed box. Give it a shake before you open it at lunch.`;
+
+const lunch2 = `Recipe 2: Cold sesame noodles with edamame
+Total time: 15 minutes. Makes 2 lunchbox portions.
+
+Ingredients: 150 g dried noodles, 100 g frozen edamame beans, 1 carrot, 2 spring onions, 2 tbsp soy sauce, 1 tbsp toasted sesame oil, 1 tbsp rice vinegar, 1 tbsp smooth peanut butter or tahini, 1 tsp honey, 1 tsp sesame seeds.
+
+1. Cook the noodles as the packet says, adding the frozen edamame for the last 2 minutes. Drain and rinse under cold water until both are completely cool, then shake dry.
+2. Whisk the soy sauce, sesame oil, vinegar, peanut butter and honey with 1 tbsp water until smooth.
+3. Peel the carrot into ribbons with a vegetable peeler and slice the spring onions.
+4. Toss everything with the dressing, divide between two boxes and scatter the sesame seeds on top.
+
+Keeps: 2 days in the fridge. The noodles soak up the dressing overnight, so add a splash of soy sauce on the second day if they seem dry.`;
+
+const lunch3 = `Recipe 3: Hummus, carrot and spinach wraps
+Total time: 10 minutes. Makes 2 lunchbox portions.
+
+Ingredients: 2 large soft tortillas, 6 tbsp hummus, 1 large carrot, a handful of baby spinach, half a red pepper, 40 g grated cheddar, half a lemon, a pinch of ground cumin, black pepper.
+
+1. Grate the carrot and slice the pepper into thin strips. Squeeze the lemon over the carrot and add the cumin and a little black pepper.
+2. Spread 3 tbsp hummus over each tortilla, right to the edges; it holds the wrap together.
+3. Lay a line of spinach across the lower third of each, then the carrot, pepper and cheese on top.
+4. Fold in the sides and roll up tightly from the bottom. Cut each wrap in half on a slant and pack the halves side by side so they cannot unroll.
+
+Keeps: 1 day in the fridge. Make them the night before, not earlier, or the tortilla turns soft.`;
+
+const lunch4 = `Recipe 4: Roast vegetable couscous
+Total time: 35 minutes. Makes 2 lunchbox portions.
+
+Ingredients: 1 courgette, 1 red pepper, 1 red onion, 1 small aubergine, 3 tbsp olive oil, 1 tsp smoked paprika, 120 g couscous, 180 ml boiling vegetable stock, 1 lemon, a handful of mint, 2 tbsp mixed seeds, salt, black pepper.
+
+1. Heat the oven to 220 degrees C (200 fan). Cut all the vegetables into bite-sized chunks, toss them on a tray with 2 tbsp oil, the paprika, salt and pepper, and roast for 25 minutes, turning once, until soft and browned at the edges.
+2. While they roast, put the couscous in a bowl, pour over the boiling stock, cover with a plate and leave for 5 minutes. Fluff it with a fork and stir in the last tbsp of oil and the juice of the lemon.
+3. Let the vegetables cool on the tray for a few minutes, then fold them through the couscous with the chopped mint.
+4. Divide between two boxes and sprinkle the seeds over just before closing the lids.
+
+Keeps: 3 days in the fridge. It is just as good cold as warm.`;
+
+const lunch5 = `Recipe 5: Tuna, white bean and lemon salad
+Total time: 10 minutes. Makes 2 lunchbox portions.
+
+Ingredients: 1 tin white beans (drained and rinsed), 1 tin tuna in olive oil (about 150 g), 1 small red onion, 1 celery stick, 8 black olives, 1 lemon, 1 tbsp capers, 2 tbsp olive oil, a handful of parsley, salt, black pepper.
+
+1. Finely chop the onion and the celery, halve the olives and chop the parsley.
+2. Drain the tuna, keeping its oil, and break it into large flakes with a fork.
+3. In a bowl, whisk the tuna oil and the olive oil with the zest and juice of the lemon, a pinch of salt and plenty of pepper.
+4. Add the beans, onion, celery, olives, capers and parsley, toss gently so the tuna stays in flakes, and divide between two boxes.
+
+Keeps: 2 days in the fridge. Pack a slice of bread or a few crackers separately to eat with it.`;
+
+const lunch6 = `Recipe 6: Pesto pasta salad with tomatoes and mozzarella
+Total time: 18 minutes. Makes 2 lunchbox portions.
+
+Ingredients: 160 g short pasta such as fusilli, 3 tbsp green pesto, 1 tbsp olive oil, 12 cherry tomatoes, 125 g mozzarella pearls or a torn ball, a handful of rocket, half a lemon, salt, black pepper.
+
+1. Cook the pasta in plenty of salted water for 1 minute longer than the packet says, so it stays tender once cold. Drain and rinse under cold water, then drain well.
+2. Stir the pesto with the oil and a squeeze of lemon; cold pasta needs a looser sauce than hot.
+3. Toss the pasta with the pesto, then fold in the halved tomatoes and the mozzarella.
+4. Divide between two boxes and lay the rocket on top, where it stays crisp until lunch.
+
+Keeps: 3 days in the fridge. Stir it before eating, as the pesto settles to the bottom.`;
+
+// ---- Pack 21: six one-pan dinners for four. Recipe 3 boils its pasta in a second pot. ----
+
+const ONE_PAN_PROMISES = [
+  "Every recipe cooks in one pan or one tray, with no second pan, pot or tray.",
+  "Every recipe serves 4.",
+  "Every recipe states a total time of 45 minutes or less.",
+];
+
+const pan1 = `Recipe 1: Lemon chicken thighs with potatoes and green beans
+Total time: 40 minutes. Serves 4.
+
+Ingredients: 8 boneless chicken thighs with the skin on, 800 g small potatoes, 200 g green beans, 1 lemon, 6 cloves garlic (unpeeled), 3 tbsp olive oil, 1 tsp dried oregano, salt, black pepper.
+
+1. Heat the oven to 220 degrees C (200 fan). Cut the potatoes into 2 cm chunks and put them on a large roasting tray with the garlic, 2 tbsp oil, salt and pepper. Toss with your hands.
+2. Nestle the chicken thighs among the potatoes, skin side up. Rub them with the last of the oil, the oregano and plenty of salt, and tuck the lemon, cut into quarters, in between.
+3. Roast for 25 minutes, until the skin is crisp and golden.
+4. Scatter the green beans into the gaps on the tray, give everything a shake and roast for 8 more minutes.
+5. Squeeze the roasted lemon over the tray and serve straight from it, pressing the soft garlic out of its skins onto the potatoes.`;
+
+const pan2 = `Recipe 2: Smoky rice with chickpeas and peppers
+Total time: 40 minutes. Serves 4.
+
+Ingredients: 2 tbsp olive oil, 1 onion, 2 red peppers, 3 cloves garlic, 2 tsp smoked paprika, a pinch of saffron or half tsp turmeric, 300 g paella or other short-grain rice, 1 tin chopped tomatoes, 900 ml vegetable stock, 1 tin chickpeas (drained), 150 g frozen peas, 1 lemon, a handful of parsley, salt.
+
+1. Heat the oil in your widest frying pan or a paella pan over medium heat. Cook the sliced onion and peppers for 6 minutes until soft, then add the garlic, paprika and saffron for 1 minute.
+2. Stir in the rice to coat it in the oil, then add the tomatoes, the stock and the chickpeas. Season with salt, stir once, and spread the rice into an even layer.
+3. Bring to a simmer and cook for 18 minutes without stirring, so a crust can form on the bottom. Scatter the peas over for the last 5 minutes.
+4. Take the pan off the heat, cover it with a clean tea towel and leave it for 5 minutes.
+5. Scatter the parsley, cut the lemon into wedges and serve from the pan, scraping up the crisp rice from the bottom.`;
+
+const pan3 = `Recipe 3: Creamy tomato and spinach pasta
+Total time: 25 minutes. Serves 4.
+
+Ingredients: 400 g penne, 2 tbsp olive oil, 1 onion, 3 cloves garlic, 1 tsp chilli flakes, 2 tbsp tomato puree, 1 tin chopped tomatoes, 150 ml double cream, 150 g baby spinach, 60 g grated parmesan, a handful of basil, salt, black pepper.
+
+1. Bring a large pot of salted water to the boil and cook the penne in it for 10 to 11 minutes, until just tender. Save a mug of the water, then drain.
+2. Meanwhile, heat the oil in a large frying pan over medium heat and cook the chopped onion for 5 minutes. Add the garlic, chilli and tomato puree and fry for 1 minute.
+3. Add the tinned tomatoes and simmer for 8 minutes until thick. Stir in the cream and season.
+4. Add the spinach a handful at a time until it wilts, then tip in the drained pasta with a splash of the saved water and toss until glossy.
+5. Serve with the parmesan and torn basil on top.`;
+
+const pan4 = `Recipe 4: Sausages with white beans and kale
+Total time: 35 minutes. Serves 4.
+
+Ingredients: 8 pork sausages, 1 tbsp olive oil, 1 red onion, 2 cloves garlic, 1 tsp fennel seeds, 1 tsp dried rosemary, 2 tins white beans (drained), 1 tin chopped tomatoes, 200 ml chicken or vegetable stock, 150 g kale (stalks removed), 1 tbsp red wine vinegar, salt, black pepper.
+
+1. Heat the oil in a large, deep frying pan over medium heat. Brown the sausages on all sides for 8 to 10 minutes, then lift them onto a plate.
+2. In the same pan, cook the sliced onion for 5 minutes, then add the garlic, fennel seeds and rosemary for 1 minute.
+3. Tip in the beans, tomatoes and stock, stir, and return the sausages to the pan. Simmer for 12 minutes until the sauce thickens and the sausages are cooked through.
+4. Push the kale into the sauce and cook for 3 minutes until it wilts. Stir in the vinegar and season.
+5. Serve straight from the pan, with bread for the sauce if you like.`;
+
+const pan5 = `Recipe 5: Salmon tray bake with tomatoes and olives
+Total time: 35 minutes. Serves 4.
+
+Ingredients: 4 salmon fillets, 500 g baby potatoes, 250 g cherry tomatoes, a handful of pitted black olives, 1 lemon, 3 tbsp olive oil, 2 cloves garlic, 1 tsp dried thyme, a handful of parsley, salt, black pepper.
+
+1. Heat the oven to 220 degrees C (200 fan). Cut the potatoes into thin slices, about 5 mm, so they cook in the time. Toss them on a large tray with 2 tbsp oil, the sliced garlic, the thyme, salt and pepper, and roast for 15 minutes.
+2. Push the potatoes to the edges, add the tomatoes and olives, and lay the salmon fillets in the middle, skin side down. Brush the fish with the rest of the oil and season.
+3. Lay a thin slice of lemon on each fillet and roast for 12 minutes, until the salmon flakes easily.
+4. Scatter the chopped parsley over the tray and serve at once, spooning the tomato juices over the fish.`;
+
+const pan6 = `Recipe 6: Chicken and broccoli stir-fry with noodles
+Total time: 25 minutes. Serves 4.
+
+Ingredients: 500 g chicken breast, 1 head broccoli, 1 red pepper, 4 spring onions, a thumb of ginger, 3 cloves garlic, 2 tbsp vegetable oil, 600 g ready-cooked noodles from the chiller, 4 tbsp soy sauce, 2 tbsp oyster sauce, 1 tbsp honey, 1 tsp cornflour, 1 tsp sesame oil.
+
+1. Mix the soy sauce, oyster sauce, honey, cornflour, sesame oil and 4 tbsp water in a cup; this is the sauce.
+2. Slice the chicken into thin strips. Cut the broccoli into small florets, slice the pepper and spring onions, and grate the ginger and garlic.
+3. Heat the oil in a wok or your largest frying pan over high heat. Stir-fry the chicken for 4 to 5 minutes until cooked through and lightly browned.
+4. Add the broccoli, pepper, ginger and garlic with 2 tbsp water and stir-fry for 3 minutes, until the broccoli is bright green and just tender.
+5. Add the noodles and the sauce, toss for 2 minutes until everything is glossy and hot, then scatter the spring onions over and serve from the wok.`;
+
+// ---- Pack 22: six slow-cooker meals, all promises kept. ----
+
+const SLOW_PROMISES = [
+  "Every recipe gives a cooking time on low and a cooking time on high.",
+  "No recipe uses a stove, a frying pan or an oven; only the slow cooker.",
+  "Every recipe serves 4 to 6.",
+];
+
+const slow1 = `Recipe 1: Chicken, chickpea and apricot stew
+Cooking time: 6 to 7 hours on low, or 3 to 4 hours on high. Serves 4.
+
+Ingredients: 8 boneless chicken thighs, 1 onion, 3 cloves garlic, 2 tsp ground cumin, 1 tsp ground cinnamon, 1 tsp ground ginger, 1 tin chopped tomatoes, 1 tin chickpeas (drained), 100 g dried apricots, 300 ml chicken stock, 1 tbsp honey, half a lemon, a handful of coriander, salt, black pepper.
+
+1. Slice the onion, crush the garlic and put them in the slow cooker with the spices, stirring so the spices coat the onion.
+2. Lay the chicken thighs on top and season them well.
+3. Add the tomatoes, chickpeas, apricots, stock and honey. Stir gently so everything is under the liquid.
+4. Cover and cook for 6 to 7 hours on low, or 3 to 4 hours on high, until the chicken falls apart when pressed with a spoon.
+5. Squeeze in the lemon, taste for salt, and scatter the coriander over. Serve with flatbread to tear and dip.`;
+
+const slow2 = `Recipe 2: Beef and carrot stew with thyme
+Cooking time: 8 hours on low, or 5 hours on high. Serves 6.
+
+Ingredients: 1 kg stewing beef in large chunks, 2 tbsp plain flour, 4 carrots, 2 celery sticks, 2 onions, 3 cloves garlic, 500 g small potatoes, 2 tbsp tomato puree, 1 tbsp soy sauce, 500 ml beef stock, 4 sprigs thyme, 2 bay leaves, salt, black pepper.
+
+1. Toss the beef with the flour, a good pinch of salt and plenty of pepper in the slow cooker pot itself, so nothing else gets dirty.
+2. Cut the carrots and celery into thick chunks, quarter the onions and halve the potatoes, and add them all with the garlic.
+3. Stir the tomato puree and soy sauce into the stock and pour it over. Tuck in the thyme and bay leaves.
+4. Cover and cook for 8 hours on low, or 5 hours on high, until the beef breaks apart with a spoon.
+5. Fish out the bay leaves and thyme stalks, taste, and season. Serve in deep bowls with crusty bread.
+
+The flour thickens the gravy as it cooks, so there is nothing to do at the end except eat.`;
+
+const slow3 = `Recipe 3: Red lentil and coconut dal
+Cooking time: 6 hours on low, or 3 hours on high. Serves 4.
+
+Ingredients: 300 g red lentils (rinsed), 1 onion, 3 cloves garlic, a thumb of ginger, 1 tbsp curry powder, 1 tsp ground turmeric, 1 tsp ground cumin, 1 tin chopped tomatoes, 1 tin coconut milk, 700 ml vegetable stock, 100 g baby spinach, 1 lime, a handful of coriander, salt.
+
+1. Finely chop the onion and grate the garlic and ginger straight into the slow cooker.
+2. Add the lentils, the spices, the tomatoes, the coconut milk and the stock. Stir well, scraping the spices from the sides.
+3. Cover and cook for 6 hours on low, or 3 hours on high, until the lentils have collapsed into a thick, soft dal. Stir once if you are passing, as lentils can catch at the edges.
+4. Stir in the spinach, cover again for 10 minutes until it wilts, and season with salt and the juice of the lime.
+5. Scatter the coriander over and serve with flatbread or naan from the bakery.`;
+
+const slow4 = `Recipe 4: Smoky pulled pork for rolls
+Cooking time: 9 to 10 hours on low, or 5 to 6 hours on high. Serves 6.
+
+Ingredients: 1.5 kg boneless pork shoulder (rind removed), 2 onions, 2 tbsp brown sugar, 2 tsp smoked paprika, 1 tsp garlic powder, 1 tsp ground cumin, 1 tsp salt, 150 ml ketchup, 3 tbsp cider vinegar, 1 tbsp mustard, 6 soft bread rolls, and coleslaw or shredded white cabbage to serve.
+
+1. Slice the onions and spread them over the bottom of the slow cooker; they lift the meat and flavour the juices.
+2. Mix the sugar, paprika, garlic powder, cumin and salt and rub it all over the pork. Sit the pork on the onions.
+3. Stir the ketchup, vinegar and mustard together and pour over the meat.
+4. Cover and cook for 9 to 10 hours on low, or 5 to 6 hours on high, until the pork pulls apart with two forks.
+5. Shred the pork in the pot with two forks and stir it through the sauce. Pile into split rolls and top with coleslaw.`;
+
+const slow5 = `Recipe 5: Vegetable minestrone with pasta
+Cooking time: 7 hours on low, or 4 hours on high, then 30 minutes on high for the pasta. Serves 6.
+
+Ingredients: 1 onion, 2 carrots, 2 celery sticks, 2 courgettes, 2 cloves garlic, 1 tin chopped tomatoes, 1 tin cannellini beans (drained), 1.2 litres vegetable stock, 1 tsp dried oregano, 1 bay leaf, 100 g small pasta shapes, 100 g green cabbage or kale (shredded), 40 g grated parmesan, salt, black pepper.
+
+1. Dice the onion, carrots, celery and courgettes into small, even cubes so every spoonful has a bit of everything. Put them in the slow cooker with the crushed garlic.
+2. Add the tomatoes, beans, stock, oregano and bay leaf. Season and stir.
+3. Cover and cook for 7 hours on low, or 4 hours on high, until the vegetables are soft.
+4. Turn the slow cooker to high if it is not already, stir in the pasta and the cabbage, and cook for 30 minutes more until the pasta is tender.
+5. Remove the bay leaf, check the seasoning and serve with parmesan grated over each bowl.`;
+
+const slow6 = `Recipe 6: Black bean and sweet potato chilli
+Cooking time: 8 hours on low, or 4 hours on high. Serves 6.
+
+Ingredients: 2 sweet potatoes, 1 onion, 1 red pepper, 3 cloves garlic, 2 tins black beans (drained), 2 tins chopped tomatoes, 1 tbsp ground cumin, 2 tsp smoked paprika, 1 tsp chilli powder, 1 tsp dried oregano, 250 ml vegetable stock, 1 tbsp cocoa powder, 1 lime, salt; avocado, soured cream and tortilla chips to serve.
+
+1. Peel the sweet potatoes and cut them into 2 cm cubes. Chop the onion and pepper and crush the garlic.
+2. Put everything except the lime and the toppings into the slow cooker and stir well; the cocoa looks odd at first and disappears into the sauce.
+3. Cover and cook for 8 hours on low, or 4 hours on high, until the sweet potato is soft and starting to break into the sauce.
+4. Squeeze in the lime and season with salt; mash a few of the sweet potato cubes against the side to thicken it.
+5. Serve in bowls topped with sliced avocado, a spoon of soured cream and a handful of tortilla chips for crunch.`;
+
+// ---- Pack 23: five repair requests to a landlord, all promises kept. ----
+
+const LANDLORD_PROMISES = [
+  "Every template has a subject line.",
+  "Every template asks for a reply by a stated calendar date.",
+  "No template threatens to withhold rent.",
+];
+
+const landlord1 = `Template 1: No heating or hot water
+Subject: Flat 3, 14 Harbour Road: no heating or hot water since Monday
+
+Dear Ms Carter,
+
+The boiler in Flat 3 stopped working on Monday 12 October. There has been no heating or hot water since then; the display shows a fault code, and resetting it as the manual describes has not helped.
+
+With the weather turning cold this is urgent for us. Could you arrange for an engineer to visit as soon as possible? Someone is at home every day after 15:00, and I can make other times work if you tell me in advance.
+
+Please reply by Wednesday 14 October to let me know when the engineer can come.
+
+Thank you,
+Alex Moreno
+Flat 3, 14 Harbour Road`;
+
+const landlord2 = `Template 2: Damp and mould in the bedroom
+Subject: Damp patch and mould on the bedroom wall at Flat 3
+
+Dear Ms Carter,
+
+I am writing about a damp patch on the outside wall of the main bedroom. It first appeared about three weeks ago, is now roughly the size of a door, and black mould has started to grow along the bottom edge and behind the wardrobe. I have attached four photos taken on different days so you can see it spreading.
+
+We open the windows every morning and run the extractor fan in the bathroom, so I do not think this is condensation alone; it looks as if water is coming in from outside, possibly from the gutter above that window.
+
+Could you arrange for someone to inspect the wall and the gutter? Please reply by Friday 23 October with a date for the visit.
+
+Kind regards,
+Alex Moreno
+Flat 3, 14 Harbour Road`;
+
+const landlord3 = `Template 3: Broken window lock
+Subject: Kitchen window lock broken at Flat 3
+
+Dear Ms Carter,
+
+The lock on the kitchen window broke this morning. The handle turns freely and the window can no longer be locked, and because the kitchen is on the ground floor and faces the side alley, I am not comfortable leaving it like this for long.
+
+For now I have wedged it shut from the inside, but that is not a real fix. Could you send someone to replace the lock? I am happy to let them in at any time during the day on a weekday if you give me a few hours' notice.
+
+Please reply by Tuesday 27 October so I know when it will be repaired.
+
+Many thanks,
+Alex Moreno
+Flat 3, 14 Harbour Road`;
+
+const landlord4 = `Template 4: Leak under the kitchen sink
+Subject: Leak under the kitchen sink at Flat 3
+
+Dear Ms Carter,
+
+There is a slow leak from the pipe under the kitchen sink. I noticed it on Sunday when the cupboard floor was wet; the joint behind the waste pipe drips steadily whenever the tap is running. I have put a bowl underneath, moved everything out of the cupboard, and we are using the tap as little as we can.
+
+The cupboard base is chipboard and has already started to swell, so the sooner it is fixed the less there will be to replace. A photo of the joint is attached.
+
+Could you arrange a plumber? Please reply by Monday 2 November with a time that suits you, and I will make sure someone is in.
+
+Best regards,
+Alex Moreno
+Flat 3, 14 Harbour Road`;
+
+const landlord5 = `Template 5: A polite follow-up when nothing has happened
+Subject: Follow-up: heating repair at Flat 3, first reported on 12 October
+
+Dear Ms Carter,
+
+I wrote on 12 October to report that the boiler had stopped working, and again on 19 October. I have not yet had a reply, and the flat has now been without heating or hot water for over two weeks.
+
+I understand messages can go astray, so I am sending this one by email and by post. Copies of both earlier emails are below, with the dates and times they were sent.
+
+We have been heating water in the kettle and using a small electric heater in one room, which will not work for much longer as the nights get colder. Could you confirm when an engineer will come? Please reply by Thursday 5 November; if a phone call is easier, my number is below and I am free after 15:00 every day.
+
+Thank you for your help,
+Alex Moreno
+Flat 3, 14 Harbour Road
+Phone: 07700 900123`;
+
+// ---- Pack 24: six apology emails to customers. Template 4 offers a discount code. ----
+
+const APOLOGY_PROMISES = [
+  "Every template opens with a greeting that uses the customer's first name.",
+  "Every template has a 'What we have done:' line.",
+  "No template offers a discount or a discount code.",
+];
+
+const apology1 = `Template 1: Your order is late
+Hi Laura,
+
+I am sorry: your order should have reached you on Tuesday and it has not. The courier missed the collection from our warehouse on Monday, and we did not catch it until your message arrived. That is our mistake, not yours, and you should not have had to chase us.
+
+What we have done: your parcel left this morning on a next-day service, and the tracking link below now shows it moving. I have also added a note to your order so that anyone who answers your next message can see the whole story without asking you to repeat it.
+
+If it has not arrived by Friday evening, reply to this email and I will look into it myself.
+
+With apologies,
+Jo, Customer Care at Larkbrook`;
+
+const apology2 = `Template 2: We sent the wrong item
+Hello Tom,
+
+Thank you for letting us know, and I am sorry about the mix-up. You ordered the large blue storage basket and we sent the small grey one. Our packing list and the label did not match, and we did not check one against the other before the box was sealed.
+
+What we have done: the right basket went out today and should arrive within two working days. A prepaid return label is attached for the grey one; drop it at any post office whenever it suits you, as there is no deadline. We have also changed how that shelf is labelled in the warehouse so the two sizes cannot be confused again.
+
+If anything else about the order is not right, just reply here.
+
+Best wishes,
+Jo, Customer Care at Larkbrook`;
+
+const apology3 = `Template 3: An email we sent by mistake
+Hi Daniel,
+
+You may have received an email from us this morning saying your order had been cancelled. It had not, and I am sorry for the worry that must have caused. A test message meant for our own team was sent to a group of real customers, and you were one of them.
+
+What we have done: we have checked that your order is still in place and on schedule, and nothing about it has changed. The tool that sent the message now needs a second person to approve any email to customers before it goes out.
+
+You do not need to do anything. If you replied to the earlier email or contacted your bank because of it, let me know and I will help put things straight.
+
+Sincerely,
+Jo, Customer Care at Larkbrook`;
+
+const apology4 = `Template 4: Your item arrived damaged
+Hi Maya,
+
+I am so sorry your lamp arrived with a cracked base. That should not happen with the packaging we use, and the photos you sent make it clear it was damaged in transit, not by anything you did.
+
+What we have done: a replacement lamp is packed in a double-walled box and goes out with tomorrow's collection. You do not need to send the broken one back; please wrap the broken glass before you recycle it. As a thank-you for your patience, use the code SORRY15 at checkout for 15 percent off your next order.
+
+If the replacement arrives with any problem at all, reply with a photo and I will sort it out the same day.
+
+Kind regards,
+Jo, Customer Care at Larkbrook`;
+
+const apology5 = `Template 5: Our last reply was not good enough
+Hi Omar,
+
+I have read back through our conversation and I owe you an apology. You asked a clear question about assembling the shelving unit, and our reply was short, pointed you to a page that did not answer it, and took four days to arrive. You deserved better on all three counts.
+
+What we have done: I have written out the steps for your exact model below, with the two screws that the printed guide mixes up marked clearly. I have also shared your message with our team as an example of where our replies fall short, so it leads to a change and not just a note.
+
+If anything is still unclear, reply here and the message will come straight to me.
+
+Warm regards,
+Jo, Customer Care at Larkbrook`;
+
+const apology6 = `Template 6: Something you ordered is out of stock
+Dear Grace,
+
+I am sorry to tell you that the green linen tablecloth in your order is out of stock. Our stock count showed one left when you paid, but it had already been sold in our shop that morning, and the website did not update in time.
+
+What we have done: the rest of your order was dispatched today. The tablecloth has been removed from the order and you have not been charged for it. We have also put your name on the list for the next delivery, expected in about three weeks, and you will get one email when it arrives, with no obligation to buy.
+
+I know this is disappointing when you had planned around it. If you would like help choosing something similar, reply and I will send a few options.
+
+Best wishes,
+Jo, Customer Care at Larkbrook`;
+
+// ---- Pack 25: six chemistry cards on atoms and bonding. Card 3 has no Key term line. ----
+
+const CHEM_PROMISES = [
+  "Every card has a 'Key term:' line that defines one term.",
+  "Every card ends with a 'Check yourself:' question followed by its answer.",
+  "Every card is under 200 words.",
+];
+
+const chem1 = `Card 1: Inside the atom
+An atom has a tiny, dense nucleus at its centre, made of protons and neutrons, with electrons moving around it in shells. Protons carry a charge of +1, electrons a charge of -1, and neutrons no charge at all. Protons and neutrons each have a relative mass of 1; an electron's mass is so small, about 1/1840, that it is usually counted as zero. An atom has equal numbers of protons and electrons, so overall it is neutral. Almost all of an atom is empty space: if the nucleus were a marble in the centre of a football stadium, the electrons would be specks in the outer seats.
+
+Key term: atomic number, the number of protons in the nucleus of an atom. It decides which element the atom is.
+
+Check yourself: An atom has 11 protons. How many electrons does it have? Answer: 11, because a neutral atom has as many electrons as protons.`;
+
+const chem2 = `Card 2: Mass number and isotopes
+The mass number of an atom is the total number of protons and neutrons in its nucleus. Subtract the atomic number from the mass number and you get the number of neutrons. Atoms of the same element always have the same number of protons, but they can have different numbers of neutrons. Chlorine is the classic example: about three quarters of chlorine atoms are chlorine-35 and a quarter are chlorine-37, which is why its relative atomic mass in the periodic table is 35.5, not a whole number. Isotopes of an element react in the same way, because chemical reactions depend on electrons, not neutrons.
+
+Key term: isotopes, atoms of the same element with the same number of protons but different numbers of neutrons.
+
+Check yourself: Chlorine has atomic number 17. How many neutrons are in an atom of chlorine-37? Answer: 20, because 37 minus 17 is 20.`;
+
+const chem3 = `Card 3: Electron shells
+Electrons fill shells around the nucleus from the inside out. For the first twenty elements, the first shell holds up to 2 electrons, the second up to 8 and the third up to 8, with any further electrons going into the fourth shell. Sodium, with 11 electrons, is written 2,8,1: two in the first shell, eight in the second and one in the third. The electrons in the outer shell decide how an element reacts. Elements in the same group of the periodic table have the same number of outer electrons, which is why they behave alike: lithium, sodium and potassium all have one outer electron and all react strongly with water. For these elements, the group number gives the number of outer electrons and the period number gives the number of shells in use.
+
+Check yourself: Write the electron arrangement for magnesium, which has 12 electrons. Answer: 2,8,2.`;
+
+const chem4 = `Card 4: Ionic bonding
+Ionic bonds form between a metal and a non-metal. The metal atom loses its outer electrons and becomes a positive ion; the non-metal atom gains electrons and becomes a negative ion. Both end up with a full outer shell. In sodium chloride, each sodium atom gives one electron to a chlorine atom, making Na+ and Cl- ions. The oppositely charged ions attract each other strongly in every direction, building a giant lattice. That is why ionic compounds have high melting points, and why they conduct electricity when melted or dissolved in water, when the ions are free to move, but not as solids.
+
+Key term: ion, an atom or group of atoms that has lost or gained electrons and so carries an electric charge.
+
+Check yourself: Magnesium forms Mg2+ ions. How many electrons has each magnesium atom lost? Answer: 2.`;
+
+const chem5 = `Card 5: Covalent bonding
+Covalent bonds form between non-metal atoms, which share pairs of electrons instead of transferring them. Each shared pair is one covalent bond, and sharing lets both atoms count the pair towards a full outer shell. In a water molecule, the oxygen atom shares one pair with each of two hydrogen atoms. Small covalent molecules such as water, carbon dioxide and methane have low melting and boiling points, because the forces between separate molecules are weak even though the bonds inside each molecule are strong. Giant covalent structures such as diamond are the exception: every atom is bonded to its neighbours, so they melt only at very high temperatures.
+
+Key term: covalent bond, a shared pair of electrons between two atoms.
+
+Check yourself: How many covalent bonds does the carbon atom in methane, CH4, form? Answer: 4, one with each hydrogen atom.`;
+
+const chem6 = `Card 6: Metallic bonding
+In a metal, the atoms are packed in a regular lattice and give up their outer electrons to a shared pool. The positive metal ions are held together by their attraction to this sea of electrons, which move freely through the whole structure. This one picture explains most of what metals do. They conduct electricity and heat because the free electrons can carry charge and energy through the lattice. They are malleable, bending instead of shattering, because the layers of ions can slide over each other without breaking the bonding. Most have high melting points, because the attraction between the ions and the electrons is strong.
+
+Key term: delocalised electrons, outer electrons that are not tied to one atom and are free to move through a structure.
+
+Check yourself: Why can a copper wire conduct electricity? Answer: its delocalised electrons can move through the metal and carry the charge.`;
+
+// ---- Pack 26: six first-aid reminder cards. Card 3 gives its steps as a paragraph. ----
+
+const FIRST_AID_PROMISES = [
+  "Every card lists its steps as a numbered list.",
+  "Every card has a 'Call for help:' line saying when to call emergency services.",
+  "No card names a medicine or a dose.",
+];
+
+const aid1 = `Card 1: Minor burns and scalds
+1. Get the person away from the heat source, and make sure you are not at risk yourself.
+2. Cool the burn under cool or lukewarm running water for 20 minutes. Start as soon as you can; cooling still helps if it starts late.
+3. While it cools, remove rings, watches and clothing near the burn, unless they are stuck to the skin.
+4. Cover the burn loosely with cling film laid along it, or with a clean, non-fluffy cloth. Do not wrap it tightly, as the area may swell.
+5. Do not put ice, butter or anything greasy on it, and do not burst any blisters.
+
+Call for help: call emergency services if the burn is larger than the person's hand, is on the face, hands, feet or groin, looks white or charred, was caused by chemicals or electricity, or if the person is a young child.
+
+This card is a reminder, not a replacement for a first-aid course.`;
+
+const aid2 = `Card 2: Cuts and grazes
+1. Wash your hands, or put on disposable gloves if you have them.
+2. Rinse the wound under clean running water to wash out dirt and grit.
+3. Press firmly on the wound with a clean pad or folded cloth for 10 minutes without lifting it to check. If the cut is on an arm or leg, raise it above the level of the heart.
+4. When the bleeding has stopped, pat the skin around it dry and cover the wound with a plaster or a clean dressing.
+5. Keep the dressing clean and dry, and change it if it gets wet or dirty.
+
+Call for help: call emergency services if blood is spurting, if the bleeding has not slowed after 10 minutes of firm pressure, if the wound is deep or gaping, or if there is an object stuck in it. Do not pull an object out; press around it instead.`;
+
+const aid3 = `Card 3: Nosebleeds
+Sit the person down and have them lean forward, not back, so the blood runs out of the nose instead of down the throat. Ask them to pinch the soft part of the nose, just below the bony bridge, and to keep pinching for 10 to 15 minutes without letting go to check, breathing through the mouth meanwhile and spitting out any blood rather than swallowing it. Once the bleeding stops, they should rest quietly and avoid blowing the nose, bending down or lifting anything heavy for the rest of the day, as any of these can start it again.
+
+Call for help: call emergency services if the bleeding lasts longer than 30 minutes, is very heavy, started after a blow to the head, or if the person feels faint or struggles to breathe.`;
+
+const aid4 = `Card 4: Choking in an adult
+1. Ask "Are you choking?" If the person can cough, speak or breathe, encourage them to keep coughing and stay with them.
+2. If they cannot cough or breathe, stand slightly behind them, support their chest with one hand and lean them forward.
+3. Give up to 5 sharp blows between the shoulder blades with the heel of your other hand, checking after each one whether the blockage has cleared.
+4. If it has not, stand behind them, put your arms around their waist, place a clenched fist just above the belly button, grasp it with your other hand and pull sharply inward and upward, up to 5 times.
+5. Keep alternating 5 back blows and 5 abdominal thrusts.
+
+Call for help: call emergency services if the blockage has not cleared after three rounds of back blows and thrusts, or at once if the person becomes unresponsive. Anyone given abdominal thrusts should be checked by a doctor afterwards.
+
+This card is for adults only; babies and young children need a different method.`;
+
+const aid5 = `Card 5: Sprains and strains
+1. Help the person stop what they are doing and rest the injured joint. Do not let them try to walk it off.
+2. Hold something cold against it for up to 20 minutes, such as a bag of frozen peas wrapped in a tea towel. Never put ice directly on bare skin.
+3. Repeat the cold for 20 minutes every two to three hours during the first day.
+4. Raise the injured limb on a cushion or chair, above the level of the heart if you can, to reduce swelling.
+5. Let the joint rest for a day or two, then start moving it gently as the pain allows.
+
+Call for help: call emergency services if the limb looks misshapen or bent at an odd angle, if bone is showing, or if the hand or foot below the injury is cold, pale or numb. If the person simply cannot put weight on it, they should be seen at an urgent care service the same day.`;
+
+const aid6 = `Card 6: Fainting
+1. If someone feels faint, help them to sit or lie down before they fall.
+2. If they have fainted, lay them on their back and raise their legs, resting them on a chair or holding them up, to help blood flow back to the brain.
+3. Loosen anything tight around the neck or waist and make sure they have fresh air; ask people nearby to step back.
+4. When they come round, keep them lying down for a few minutes, then help them sit up slowly. Do not hurry them to their feet.
+5. Stay with them until they feel fully recovered, and offer a glass of water once they are sitting up and alert.
+
+Call for help: call emergency services if the person does not come round within a minute or two, is not breathing normally, was injured in the fall, has chest pain or a racing heartbeat, or faints again. If they are breathing but stay unresponsive, put them in the recovery position while you wait.`;
+
+// ---- Pack 27: six cards of world capitals by region, all promises kept. ----
+
+const CAPITALS_PROMISES = [
+  "Every card lists at least five countries, each with its capital.",
+  "Every card ends with a 'Trap:' line naming a capital people often get wrong.",
+  "No card is longer than 150 words.",
+];
+
+const capitals1 = `Card 1: Western Europe
+France: Paris
+Spain: Madrid
+Portugal: Lisbon
+Ireland: Dublin
+Belgium: Brussels
+Switzerland: Bern
+Netherlands: Amsterdam
+
+Memory hook: the Netherlands is the odd case on this card. Amsterdam is the capital, but the government and parliament sit in The Hague, so both names turn up in questions about the country.
+
+Trap: the capital of Switzerland is Bern, not Zurich or Geneva, which are larger and better known.`;
+
+const capitals2 = `Card 2: Northern and Eastern Europe
+Norway: Oslo
+Sweden: Stockholm
+Finland: Helsinki
+Poland: Warsaw
+Czechia: Prague
+Hungary: Budapest
+Romania: Bucharest
+
+Memory hook: Budapest was once separate towns, Buda on the hills and Pest on the plain, facing each other across the Danube; say the two halves and you have the name.
+
+Trap: Bucharest is the capital of Romania and Budapest the capital of Hungary; the two are swapped more often than any other pair in Europe.`;
+
+const capitals3 = `Card 3: Africa
+Egypt: Cairo
+Kenya: Nairobi
+Ghana: Accra
+Ethiopia: Addis Ababa
+Senegal: Dakar
+Morocco: Rabat
+Nigeria: Abuja
+
+Memory hook: Addis Ababa means "new flower", a good picture for one of the highest capitals in the world, at about 2,350 metres above the sea.
+
+Trap: the capital of Nigeria is Abuja, not Lagos, and the capital of Morocco is Rabat, not Casablanca; in both cases the bigger city is the one people guess.`;
+
+const capitals4 = `Card 4: East and South-East Asia
+Japan: Tokyo
+South Korea: Seoul
+Vietnam: Hanoi
+Thailand: Bangkok
+Philippines: Manila
+Malaysia: Kuala Lumpur
+Myanmar: Naypyidaw
+
+Memory hook: Hanoi is in the north of Vietnam and Ho Chi Minh City, the biggest city, is in the south; picture the capital as the head of the country, at the top of the map.
+
+Trap: the capital of Myanmar is Naypyidaw, not Yangon. The government moved there in 2005, and Yangon is still the larger city.`;
+
+const capitals5 = `Card 5: The Americas
+Canada: Ottawa
+Mexico: Mexico City
+Brazil: Brasília
+Argentina: Buenos Aires
+Peru: Lima
+Colombia: Bogotá
+Chile: Santiago
+
+Memory hook: Brasília was built from scratch in the interior and opened as the capital in 1960, and the name of the country is hidden inside the name of its capital.
+
+Trap: the capital of Canada is Ottawa, not Toronto or Montreal, and the capital of Brazil is Brasília, not Rio de Janeiro, which held the title until 1960.`;
+
+const capitals6 = `Card 6: Oceania
+Australia: Canberra
+New Zealand: Wellington
+Fiji: Suva
+Papua New Guinea: Port Moresby
+Samoa: Apia
+Tonga: Nuku'alofa
+
+Memory hook: Canberra was a compromise. Sydney and Melbourne could not agree which of them should be the capital, so a new city was built between them.
+
+Trap: the capital of Australia is Canberra, not Sydney, and the capital of New Zealand is Wellington, not Auckland, the larger city to the north.`;
+
+// ---- Pack 28: six poetry prompts in fixed forms. Prompt 4 sets no number of lines. ----
+
+const POETRY_PROMISES = [
+  "Every prompt names a poetic form and says how many lines to write.",
+  "Every prompt has a 'Must use:' line with one word the poem must contain.",
+  "No prompt is longer than 150 words.",
+];
+
+const poem1 = `Prompt 1: The kitchen after midnight
+Form: haiku, 3 lines, with 5, 7 and 5 syllables.
+Write about a kitchen late at night, after everyone else has gone to bed: the hum of the fridge, a single light left on, a cup on the draining board. A haiku works by noticing one thing exactly, so do not try to describe the whole room. Pick one sound or one object and let it carry the feeling. Count the syllables on your fingers, then read the poem aloud to check the rhythm.
+Must use: kettle`;
+
+const poem2 = `Prompt 2: Dressed for the wrong weather
+Form: limerick, 5 lines, rhyming AABBA, with lines 3 and 4 shorter than the others.
+Write a limerick about someone who is always ready for the wrong weather: a heavy coat in a heatwave, sandals in the snow. Limericks live on rhythm, so read each line aloud with a bounce, da-da-DUM, and change words until the beat lands. Save the funniest image for the fifth line, which should rhyme with the first two and land like a punchline.
+Must use: umbrella`;
+
+const poem3 = `Prompt 3: Leaving a house
+Form: sonnet, 14 lines, ending in a rhyming couplet.
+Write a sonnet about the last hour in a home you are leaving: the rooms empty, the pale marks on the walls where pictures hung, the door you will not open again. Use the first eight lines to describe the empty house and the last six to turn towards what comes next. The final couplet should land on one clear thought. Rhyme is welcome everywhere but required only in the couplet.
+Must use: keys`;
+
+const poem4 = `Prompt 4: The view from a bus window
+Form: free verse, with no set length. Write as many lines as the poem needs, whether that is four or forty.
+Ride a bus route you know well, or remember one, and write down what passes the window in the order you see it: a shuttered shop, a dog waiting at a door, a child's face in the next bus over. Do not explain how any of it makes you feel. Let the list do the work, and break your lines where your eye moves from one thing to the next.
+Must use: window`;
+
+const poem5 = `Prompt 5: The tide
+Form: villanelle, 19 lines: five three-line stanzas and a closing four-line stanza, with two refrain lines that repeat.
+Write a villanelle about something that keeps coming back, the way the tide does: a habit, a worry, a person who keeps returning to a town. The form is built for obsession, so choose your two refrain lines first and make sure each can stand on its own and mean a little more each time it returns. Keep the language plain; the repetition supplies the music.
+Must use: tide`;
+
+const poem6 = `Prompt 6: Climbing
+Form: rhyming couplets, 12 lines, in six pairs.
+Write a poem about learning to do something frightening one step at a time: a first climb up a tall ladder, a first day at a new job, a first swim out of your depth. Let each couplet be one step up. The rhymes should feel easy at the bottom and harder to reach as the poem climbs, and the last couplet should look down at how far you have come.
+Must use: ladder`;
+
+// ---- Pack 29: six dialogue prompts for two voices. Prompt 3 names three people. ----
+
+const DIALOGUE_PROMISES = [
+  "Every prompt has a 'Characters:' line naming exactly two people.",
+  "Every prompt gives the opening line of dialogue in quotation marks.",
+  "No prompt is longer than 150 words.",
+];
+
+const dialogue1 = `Prompt 1: The garage
+Characters: Nell and her younger brother Oscar.
+Setting: their late father's garage, the weekend they have to empty it, every shelf full of jars of screws, old paint tins and boxes labelled in his handwriting.
+Opening line: "You know he kept every single receipt?"
+Write the scene in dialogue only, with no narration beyond what the two of them say. Nell wants to be finished by dark; Oscar wants to open every box. Let the argument about the boxes become an argument about something else, and end when one of them finds something neither expected.`;
+
+const dialogue2 = `Prompt 2: The night shift
+Characters: Imani, a nurse at the end of a twelve-hour shift, and Paul, the hospital's night security guard.
+Setting: a staff entrance at five in the morning, both of them waiting for the same delayed bus home.
+Opening line: "Is it always this cold out here, or is it just me?"
+They have nodded to each other for two years and never had a conversation. Write the twenty minutes until the bus comes. Neither of them should say anything about the part of the job that matters most to them until the last two lines.`;
+
+const dialogue3 = `Prompt 3: The recipe
+Characters: Ana, her brother Luis and their aunt Marta.
+Setting: Marta's small kitchen on a Sunday afternoon, where she has promised at last to teach them the family stew, a dish she has never written down.
+Opening line: "No, no, not like that, you will drown it."
+Write the lesson as it happens, mostly in dialogue. Marta gives every instruction in handfuls and pinches, never in measurements. Ana writes everything down; Luis keeps tasting. Somewhere in the middle, let it become clear why Marta has waited so long to teach them.`;
+
+const dialogue4 = `Prompt 4: The driving test
+Characters: Mr Brennan, a driving examiner, and Jess, a nervous learner on her third attempt.
+Setting: a small car waiting at a long red light, ten minutes into the test.
+Opening line: "Take your time. We are not in a hurry."
+Write the rest of the test as a conversation. The examiner is not allowed to help, and he wants to. Jess talks when she is nervous, and she is very nervous. Let her pass or fail, but decide which before you start, and let the reader work it out from one line before the result is spoken.`;
+
+const dialogue5 = `Prompt 5: The bus shelter
+Characters: Hilda, a retired teacher, and Kit, a teenager who was once in her class.
+Setting: a bus shelter at eleven at night in heavy rain, the last bus twenty minutes late.
+Opening line: "I know you. Third row, by the window, never had a pen."
+Write the conversation while they wait. Kit has had a bad night and is not ready to say why; Hilda remembers more than she admits. Keep the rain audible every few lines. End when the bus arrives, and let only one of them get on.`;
+
+const dialogue6 = `Prompt 6: Moving out
+Characters: Jonah and Bea, flatmates for six years.
+Setting: their shared flat on the last evening before the lease ends, everything packed except the things they have not yet decided who keeps.
+Opening line: "The toaster is mine. I have the receipt somewhere."
+Write the dividing-up of the last few things: the toaster, a plant, a painting neither of them really likes. Each object should stand for something about the six years. Keep it light for as long as you can, then let one object stop being funny.`;
+
+// ---- Pack 30: eight journaling prompts for students, all promises kept. ----
+
+const STUDENT_PROMISES = [
+  "Every prompt has a 'Time:' line suggesting how many minutes to write.",
+  "Every prompt ends with a question mark.",
+  "No prompt is longer than 120 words.",
+];
+
+const student1 = `Prompt 1: The first week
+Time: 10 minutes.
+Think back to the first week of this term: the timetable you had not learned yet, the rooms you got lost looking for, the people you had not met. Write down three things that felt strange then and feel normal now. Then write about one thing that still feels strange, and why it might be taking longer. What would you tell yourself on that first Monday morning if you could?`;
+
+const student2 = `Prompt 2: The subject that clicked
+Time: 15 minutes.
+Choose a subject, or one topic inside a subject, that did not make sense for a while and then suddenly did. Describe the moment it clicked as exactly as you can: where you were, who was explaining it, what the example was. Then look at something you are stuck on now. Is there anything about how the first one clicked that you could try on the second?`;
+
+const student3 = `Prompt 3: Where you work well
+Time: 10 minutes.
+Describe the place where you get the most done: the desk, the library corner, the kitchen table, the bus. What is the light like, what can you hear, what is within reach, and what is deliberately out of reach? Now describe the place where you always mean to work and never do. What is the one difference between the two places that matters most?`;
+
+const student4 = `Prompt 4: A friendship this term
+Time: 15 minutes.
+Write about a friendship that has changed this term, either one that grew or one that drifted. Do not judge it yet; just describe what happened, in order, as if you were telling someone who was not there. Which small moments made the difference? What do you want to do about that friendship in the next month, if anything?`;
+
+const student5 = `Prompt 5: A mistake worth keeping
+Time: 10 minutes.
+Pick a mistake you made recently in your work: a misread question, a lost piece of homework, a plan that started too late. Describe it plainly, without making it bigger or smaller than it was. Then write what it taught you, in one sentence you could stick on the wall above your desk. Which future mistake does that sentence help you avoid?`;
+
+const student6 = `Prompt 6: Feedback you got
+Time: 10 minutes.
+Copy out a piece of feedback a teacher gave you recently, word for word if you can. Under it, write your first reaction honestly, even if it was annoyance. Then read the feedback again as if it had been written about a friend's work. What does it actually ask you to change, and what is the smallest step you could take towards that this week?`;
+
+const student7 = `Prompt 7: Advice for someone younger
+Time: 15 minutes.
+Imagine a student two years younger than you, starting the year you have just finished. Write them a short letter with the advice you wish someone had given you: about work, about people, about the things that seemed important and were not. Keep it to things you have actually learned, not things you have been told. Which piece of advice are you still not following yourself?`;
+
+const student8 = `Prompt 8: The end of term
+Time: 10 minutes.
+It is the last day of term and you are walking out of the gate. Write the scene as if it has already happened: what you are carrying, who you are walking with, how you feel about the weeks behind you. Make it honest rather than perfect. Looking at that scene now, what is one thing you could start doing tomorrow to make it come true?`;
+
+// ---- Pack 31: a weekend in Porto, six stops. Stop 4 gives no price. ----
+
+const PORTO_PROMISES = [
+  "Every stop gives its opening hours in clock times, or says it is always open.",
+  "Every stop after the first says how to get there from the previous one and how long it takes.",
+  "Every stop gives a price, or says it is free.",
+];
+
+const porto1 = `Stop 1: São Bento station, hall open 5:00 to 1:00, free
+Start on Saturday morning in the entrance hall of the city's central railway station, which costs nothing to walk into. The walls are covered with some twenty thousand blue and white tiles, painted in the early twentieth century, showing battles, royal processions and scenes of country life, with a coloured frieze running along the top. Stand in the middle of the hall and turn slowly; then go up close to one panel and notice how each tile is only a fragment of a larger picture. Trains still leave from the platforms behind, so this is a working station, not a museum. Have a coffee and a custard tart at one of the cafes on the square outside before you go on.`;
+
+const porto2 = `Stop 2: Clérigos Tower, 9:00 to 19:00, about 10 euros
+Walk: 7 minutes. From the station cross the square and walk uphill along Rua dos Clérigos; the tower stands at the top of the street.
+The tall baroque bell tower was for many years the highest building in the city, and ships coming up the river used it as a landmark. The ticket covers the church below and the climb: a little over two hundred narrow steps up a spiral stair to a balcony around the top. From there you see the whole city laid out: the red roofs falling to the river, the bridges, and the port wine lodges on the far bank, where this afternoon ends. Go early, when the queue is short and the light is soft, and allow forty minutes including the church.`;
+
+const porto3 = `Stop 3: Bolhão Market, 8:00 to 20:00 Monday to Friday and 8:00 to 18:00 Saturday, free to enter
+Walk: 10 minutes. From the tower walk east along Rua de Passos Manuel, or follow the signs for Bolhão; the market fills a whole block in the middle of the shopping streets.
+The city's main fresh market reopened after a long restoration and keeps its two-level iron and stone hall around an open courtyard. Downstairs are fishmongers, butchers, flower sellers and fruit stalls; upstairs, small counters sell cheese, cured ham, olives and bread, and several will make you a plate to eat at a high table. Buy what looks good and make it your lunch: a piece of bread, a little cheese, a few slices of ham and a glass of wine from one of the counters. Walk the outer gallery once before you choose.`;
+
+const porto4 = `Stop 4: The port wine lodges in Vila Nova de Gaia, most open 10:00 to 18:00
+Walk: 20 minutes. From the market walk down to the river at Ribeira, then cross the lower deck of the Dom Luís I bridge to the far bank; the lodges line the waterfront and the streets climbing behind it.
+Port is made upriver in the Douro valley and has been brought down to these lodges to age for centuries, which is why the far bank is lined with company names painted on the roofs. Choose one lodge and take its tour: you walk through cool, dark cellars stacked with barrels, hear how the wine is made and aged, and finish with a tasting of two or three styles, usually a white, a ruby and a tawny. Taste them in that order, lightest first. On a busy afternoon the tours in English fill up, so book a time at the door as soon as you arrive and walk the waterfront while you wait.`;
+
+const porto5 = `Stop 5: Serra do Pilar viewpoint and the bridge's upper deck, always open, free
+Cable car: 5 minutes. From the lodges walk along the riverfront to the Gaia cable car station and ride up to the top of the hill, about 7 euros one way; or climb the steep lanes on foot in about 20 minutes.
+The terrace in front of the round monastery church at the top of the hill looks straight across at the old city: the tiled houses stacked above the river, the tower you climbed in the morning, and the bridge right in front of you. Stay for the sunset, when the fronts of the houses on the far bank turn gold. Then walk back across the upper deck of the bridge, high above the water, sharing it with the metro trains that cross at walking pace. The deck is open to walkers at all hours and costs nothing.`;
+
+const porto6 = `Stop 6: Foz do Douro by tram 1, seafront always open, tram about 7 euros one way
+Walk and tram: 35 minutes. From the bridge go down to the river at Ribeira and walk west along it for 10 minutes to the stop beside the São Francisco church, then ride historic tram 1, which runs from about 9:00 to 19:00, for 25 minutes to Passeio Alegre at the end of the line.
+Make this Sunday morning. The old wooden tram follows the water all the way to where the Douro meets the Atlantic. Get off at the last stop and walk the promenade past the small lighthouse to the long jetty at the river mouth, where on a windy day the waves break over the end of the wall. The streets behind the seafront are quiet, with cafes looking out to sea and a little beach tucked between the rocks. Have lunch facing the ocean, then take the tram back, or walk the riverside path the whole way in about an hour and a half.`;
+
+// ---- Pack 32: a first day hike near the city, six steps. Step 5 ends with only two checklist items. ----
+
+const HIKE_PROMISES = [
+  "Every step has a 'Time needed:' line.",
+  "Every step ends with a checklist of at least three items.",
+  "No step names a brand or a shop.",
+];
+
+const hike1 = `Step 1: Choose the route
+Time needed: 30 minutes, a few days before.
+For a first day hike, pick a route of 10 to 15 kilometres with no more than 500 metres of climbing in total. That is four to six hours of walking at an easy pace, with stops. Look for a route that starts and ends at a train station or a bus stop, so you do not need a car, and that has at least one place halfway where you could cut it short and reach transport. Walking guides from the local library and the route pages of regional park services are good sources; read two descriptions of the same route if you can, since one will often mention a muddy stretch or a closed path that the other leaves out.
+
+Checklist:
+- Route between 10 and 15 km, with under 500 m of climbing
+- Transport at both ends, with the times written down
+- One place to cut the walk short`;
+
+const hike2 = `Step 2: Check the weather and the daylight
+Time needed: 10 minutes, the evening before and again in the morning.
+Look at a mountain or hill forecast if your area has one, not just the city forecast; it can be windier and several degrees colder on a ridge than in the streets below. Note three things: the chance of rain in the afternoon, the wind speed on high ground, and the time of sunset. Plan to finish at least an hour before sunset, so that a slow stretch or a wrong turn does not leave you walking in the dark. If the forecast shows thunderstorms or strong winds, choose a lower route or another day; the hill will still be there.
+
+Checklist:
+- Afternoon chance of rain noted
+- Wind on high ground checked
+- Finish time set an hour before sunset`;
+
+const hike3 = `Step 3: Pack the bag
+Time needed: 20 minutes, the night before.
+A small backpack of 20 to 25 litres is plenty. The rule is to carry what you would need if the walk took twice as long as planned or the weather turned. Wear comfortable shoes or boots with a good grip that you have already walked in; new footwear on a long walk is the most common cause of blisters. Pack layers rather than one thick coat, as you will warm up quickly on the climbs and cool down fast when you stop.
+
+Checklist:
+- 1.5 litres of water and more food than you think you need
+- A waterproof jacket and a warm layer, even on a sunny day
+- A fully charged phone, a small battery pack and a paper map of the route
+- A small first-aid kit, sun cream and a hat`;
+
+const hike4 = `Step 4: Get to the start
+Time needed: about 1 hour each way, depending on the route.
+Take an early train or bus so that you start walking by 9:30; a morning start gives you the whole middle of the day for the walk and leaves time for a slow lunch. Buy a return ticket if your route ends where it starts, or check the last service from the finishing point if it does not, and save that time in your phone. On the way, look at the map again and pick out the first two turns, so you set off in the right direction instead of standing at the station studying it.
+
+Checklist:
+- Walking by 9:30
+- Last train or bus home written down
+- First two turns of the route known before you arrive`;
+
+const hike5 = `Step 5: On the trail
+Time needed: 4 to 6 hours, including stops.
+Start slower than feels natural; the first hour should feel almost too easy, because that is the pace you can keep all day. On climbs, take shorter steps rather than pushing harder, and stop to look back at the view instead of stopping to gasp. Check your position on the map at every junction, not only when you think you are lost. Eat something small every hour or so and drink before you are thirsty. Set yourself a turnaround time: if you have not reached the halfway point by then, take the short way out and save the rest of the route for another day.
+
+Checklist:
+- Snack every hour and drink before you feel thirsty
+- Turn back if you are not halfway by 13:00`;
+
+const hike6 = `Step 6: Getting home, and afterwards
+Time needed: 30 minutes at the end of the day.
+Aim to reach the finish with time to spare before your train or bus, and use it to change into a dry top, eat the rest of your food and stretch your calves and thighs for five minutes. On the way home, write down three things in your phone: how long the route really took, what you wish you had packed, and one stretch of the walk you would like to see again. Those notes are how your second hike gets better than your first, and how you will know when you are ready for a longer one.
+
+Checklist:
+- Dry top on and a short stretch done
+- Real walking time written down
+- One thing to pack differently next time`;
+
+// ---- Pack 33: a first museum visit, six steps, all promises kept. ----
+
+const MUSEUM_PROMISES = [
+  "Every step says how many minutes it takes.",
+  "Every step ends with a 'Try this:' line.",
+  "No step needs a paid guide or an audio guide.",
+];
+
+const museum1 = `Step 1: Choose one part of the museum
+Takes: 15 minutes, the day before.
+The most common mistake on a first visit is trying to see everything. Big museums hold far more than anyone can take in on one day, and after about two hours most people stop really looking. Open the museum's floor plan online and choose one wing, one floor or one collection that you are curious about: ancient Egypt, paintings from one century, musical instruments, whatever pulls you in. Check the opening hours and whether entry is free on any day or evening, and work out which entrance is closest to the part you picked.
+Try this: write down the one room you most want to see, and go there first even if it is at the far end of the building.`;
+
+const museum2 = `Step 2: Arrive and settle in
+Takes: 10 minutes.
+Arrive soon after opening, when the rooms are quiet. Leave your coat and any large bag in the cloakroom; carrying them is tiring, and many rooms do not allow backpacks anyway. Pick up a free paper map at the desk even if you have the plan on your phone, because it is easier to glance at, and mark the toilets, the cafe and two or three benches near the part you chose. Then stop for a moment in the entrance hall before you walk in, rather than rushing straight to the first room.
+Try this: find the nearest bench to your chosen rooms on the map now, so you know where to rest before you need to.`;
+
+const museum3 = `Step 3: Take a quick first lap
+Takes: 20 minutes.
+Walk through all the rooms of your chosen section once, at an easy pace, without reading any labels. The aim is to get a feel for the space and to notice what catches your eye without trying. Some things will make you slow down on their own: a colour, a size, a strange shape, a face. Do not stop for long; just make a mental note, or a quick note on your phone, of three things you want to come back to. By the end of the lap you will know the layout and have a short list of your own instead of someone else's highlights.
+Try this: note the three things that made you slow down, and the room each one is in.`;
+
+const museum4 = `Step 4: Look slowly at one thing
+Takes: 10 minutes.
+Go back to the first thing on your list and stand or sit in front of it for ten full minutes. It feels long, and that is the point. For the first few minutes simply describe to yourself what is there: the materials, the colours, the size, what is in the corners. Then ask questions: what was this for, who made it, who was it made for, what has happened to it since? Only then read the label, and notice what it tells you that your eyes had missed, and what your eyes saw that the label does not mention.
+Try this: before reading the label, guess how old the object is, then check how close you came.`;
+
+const museum5 = `Step 5: Compare two things side by side
+Takes: 20 minutes.
+Choose two objects from your list, or two in the same room, that have something in common: two portraits, two pots, two maps. Spend five minutes with each and then stand where you can see both. What is the same and what is different: the way the face is lit, the way the handle is made, what each one chooses to show and to leave out? Comparing is often easier than looking at one thing alone, because each object shows you what is unusual about the other. Read both labels at the end and see whether the dates or places explain the differences you noticed.
+Try this: decide which of the two you would take home if you could, and say to yourself in one sentence why.`;
+
+const museum6 = `Step 6: Stop before you are tired, and keep one thing
+Takes: 15 minutes.
+Leave while you still want to see more. A visit that ends on a good room is remembered better than one that drags on until your feet hurt. Sit in the cafe or on a bench by the exit for a few minutes and think back over the visit. If the museum sells postcards of the things you looked at longest, one is a good souvenir; if not, look the object up on the museum's website when you get home and save the picture. Then decide which part of the museum you would choose for your next visit.
+Try this: write three sentences about the one object you will still remember next week.`;
+
+// ---- Pack 34: six house rules for board game nights. Rule 5 has no Why line. ----
+
+const BOARD_GAME_PROMISES = [
+  "Every rule has a 'Why:' line giving its reason.",
+  "No rule names a specific board game.",
+  "Every rule is under 150 words.",
+];
+
+const boardGame1 = `Rule 1: One person learns the rules before the evening
+Whoever brings a new game reads the rulebook before everyone arrives, plays a practice round alone if they can, and explains it at the table in under ten minutes. The explanation starts with how you win, then what you do on a turn, and leaves the rare exceptions until they come up in play. Everyone else agrees to start playing before every question is answered; the first round is allowed to be a learning round.
+Why: half an hour of reading aloud from a rulebook drains the energy from an evening before the first move, and most rules make sense only once you see them in play.`;
+
+const boardGame2 = `Rule 2: Phones face down unless you are settling a rule
+Phones go face down on a shelf or in a bowl by the door once the first game starts. The only exception is checking a rule that nobody can agree on, and then one person looks it up and reads the answer aloud. Anyone waiting for an important call can say so at the start and keep their phone in a pocket on silent.
+Why: a game only works when everyone is paying attention to it, and waiting for someone to finish scrolling before they take their turn is the fastest way to make a long game feel endless.`;
+
+const boardGame3 = `Rule 3: A move can be taken back until the next player starts
+If you realise you have made a mistake, you may take your move back as long as the next player has not started their turn: no dice rolled, no card drawn, no piece touched. After that, the move stands, however painful. When teaching a new game, the table can agree to be more generous for the first round.
+Why: everyone misreads the board now and then, and letting a fresh slip be undone keeps the game about decisions rather than accidents, while the limit stops anyone from rewinding three turns once they see how things turned out.`;
+
+const boardGame4 = `Rule 4: Long thinkers get a gentle timer
+If a turn regularly takes more than two minutes, anyone at the table may ask for the sand timer. When it runs out, the player must make a move, any reasonable move. The timer is never used on someone's first game, and it is put away again as soon as the pace is back to normal.
+Why: thinking hard is part of the fun, but four people waiting in silence while one person weighs every option makes the evening drag for everyone, including the thinker.`;
+
+const boardGame5 = `Rule 5: Snacks stay off the game table
+Food and drinks go on a side table or a tray beside the players, never on the game table itself. Eat between turns, not while handling cards or pieces, and wipe your fingers before you touch anything that belongs to the game. Crisps, popcorn and anything with sauce wait until after the last game. Drinks need a lid or a coaster on the side table, and a spill on a board pauses the evening until it is dry.`;
+
+const boardGame6 = `Rule 6: The winner packs away, the loser picks the next game
+When a game ends, the winner counts the pieces back into their bags and boxes, and the player who came last chooses what to play next. If there is a tie for last place, those players decide together. The host has the final say only if it is getting late.
+Why: it keeps winning from going to anyone's head, it gives the player having the worst evening something to look forward to, and the boxes go back on the shelf with every piece inside.`;
+
+// ---- Pack 35: six cards of keyboard shortcuts. Card 5 gives the Ctrl versions only. ----
+
+const SHORTCUT_PROMISES = [
+  "Every shortcut is given twice: for keyboards with a Ctrl key and for keyboards with a Cmd key.",
+  "Every card lists at least five shortcuts.",
+  "Every card ends with a 'Practice:' line.",
+];
+
+const shortcuts1 = `Card 1: Copying and editing text
+Each line gives the shortcut for a keyboard with a Ctrl key first, then for a keyboard with a Cmd key.
+Copy: Ctrl+C | Cmd+C
+Cut: Ctrl+X | Cmd+X
+Paste: Ctrl+V | Cmd+V
+Undo: Ctrl+Z | Cmd+Z
+Redo: Ctrl+Y | Cmd+Shift+Z
+Select all: Ctrl+A | Cmd+A
+These six work in almost every program that handles text, from email to spreadsheets. Undo usually goes back many steps, not just one, so pressing it several times walks backwards through your recent changes.
+Practice: select a sentence in any document, cut it, paste it at the end, then undo twice and redo once.`;
+
+const shortcuts2 = `Card 2: Files and documents
+Each line gives the shortcut for a keyboard with a Ctrl key first, then for a keyboard with a Cmd key.
+New document or window: Ctrl+N | Cmd+N
+Open a file: Ctrl+O | Cmd+O
+Save: Ctrl+S | Cmd+S
+Print: Ctrl+P | Cmd+P
+Find in the page or document: Ctrl+F | Cmd+F
+Close the window or tab: Ctrl+W | Cmd+W
+Press save out of habit every few minutes; it costs nothing and protects you from a crash. Find is the most underused of these: it works in web pages, documents, email and most settings screens.
+Practice: open a long web page, press find, and search for a word you expect to appear more than once.`;
+
+const shortcuts3 = `Card 3: Formatting text
+Each line gives the shortcut for a keyboard with a Ctrl key first, then for a keyboard with a Cmd key.
+Bold: Ctrl+B | Cmd+B
+Italic: Ctrl+I | Cmd+I
+Underline: Ctrl+U | Cmd+U
+Insert or edit a link: Ctrl+K | Cmd+K
+Make text bigger: Ctrl+Shift+> | Cmd+Shift+>
+Make text smaller: Ctrl+Shift+< | Cmd+Shift+<
+These work in most word processors and in many email and note-taking programs. The first three toggle: press once to turn the style on, again to turn it off. Select the text first, or press the shortcut before you type.
+Practice: write one sentence, make one word bold and another italic, then turn a third word into a link.`;
+
+const shortcuts4 = `Card 4: Browser tabs
+Each line gives the shortcut for a keyboard with a Ctrl key first, then for a keyboard with a Cmd key.
+New tab: Ctrl+T | Cmd+T
+Close the tab: Ctrl+W | Cmd+W
+Reopen the tab you just closed: Ctrl+Shift+T | Cmd+Shift+T
+Go to the address bar: Ctrl+L | Cmd+L
+Reload the page: Ctrl+R | Cmd+R
+Jump to the first tab: Ctrl+1 | Cmd+1
+Jump to the last tab: Ctrl+9 | Cmd+9
+Reopening a closed tab works several times in a row, bringing tabs back in the reverse order you closed them. The address bar shortcut is also the fastest way to start a search.
+Practice: open three tabs, close two of them, then bring both back without touching the mouse.`;
+
+const shortcuts5 = `Card 5: Spreadsheets
+This card gives the shortcuts for keyboards with a Ctrl key only.
+Jump to the edge of the data: Ctrl+Arrow key
+Select to the edge of the data: Ctrl+Shift+Arrow key
+Go to the first cell: Ctrl+Home
+Insert today's date: Ctrl+;
+Select the whole column: Ctrl+Space
+Edit the active cell: F2
+Fill down from the cell above: Ctrl+D
+The jump and select shortcuts save the most time: on a sheet with thousands of rows, one keystroke takes you to the bottom instead of a minute of scrolling.
+Practice: click inside a column of numbers, jump to its last value, then select from there back to the top.`;
+
+const shortcuts6 = `Card 6: Moving around in text
+Each line gives the shortcut for a keyboard with a Ctrl key first, then for a keyboard with a Cmd key.
+Start of the line: Home | Cmd+Left
+End of the line: End | Cmd+Right
+Top of the document: Ctrl+Home | Cmd+Up
+Bottom of the document: Ctrl+End | Cmd+Down
+Select to the end of the line: Shift+End | Cmd+Shift+Right
+Select to the start of the line: Shift+Home | Cmd+Shift+Left
+On a laptop without Home and End keys, look for them on the arrow keys, reached by holding the Fn key. Adding Shift to any of these moves selects the text along the way.
+Practice: put the cursor in the middle of a long paragraph, select to the end of the line, then jump to the top of the document.`;
+
+// ---- Pack 36: six shared kitchen rules for housemates, all promises kept. ----
+
+const KITCHEN_PROMISES = [
+  "Every rule has an 'If missed:' line saying what happens next.",
+  "No rule involves a fine or any other money penalty.",
+  "Every rule is under 150 words.",
+];
+
+const kitchen1 = `Rule 1: Wash up the same day
+Everything you use, wash, dry and put away on the same day, and before you go to bed if you cook late. That includes pans, chopping boards and cooking utensils, not only plates. If the sink is full when you need it, wash up what is there first, and the owner of those dishes owes you a turn.
+If missed: dishes still in the sink the next morning go into that person's own washing-up tub under the sink, and they wash them before they next cook. Three times in a month, and it comes up at the house meeting.`;
+
+const kitchen2 = `Rule 2: One fridge shelf each, and label what is shared
+Everyone has their own shelf in the fridge and their own cupboard space, and food on your shelf is yours alone. Anything meant for everyone, such as milk, butter or sauces, goes in the door with a "shared" sticker on it. Do not take from someone else's shelf without asking first, not even a splash of milk.
+If missed: the person whose food was taken mentions it in the house chat without naming anyone, and whoever took it owns up and talks to them the same day.`;
+
+const kitchen3 = `Rule 3: Fridge check on Sunday evening
+Every Sunday evening, each person goes through their own shelf and throws away anything past its date, mouldy or forgotten. Leftovers get a label with the day they were cooked and are eaten or thrown away within three days. The person on the bin rota that week also checks the shared door shelf and wipes up any spills.
+If missed: anything still out of date on Monday morning is thrown away by whoever finds it, and that person tells the owner so nobody is surprised.`;
+
+const kitchen4 = `Rule 4: Bins on a rota
+The rota on the fridge door gives each person one week at a time. That week, you empty the kitchen bin and the recycling whenever they are full, take them out on collection night, and bring the empty bins back in the next day. Rinse the food bin after it is emptied, as that is the one that smells.
+If missed: whoever notices a full bin messages the person on the rota, and if it is still not done two hours later, they do it themselves and swap a week on the rota with the person who missed it.`;
+
+const kitchen5 = `Rule 5: Leave the hob and counters clear
+After cooking, wipe down the hob, the counter you used and the wall behind it, and put away every ingredient and utensil you took out. Nothing stays on the counter overnight except the kettle, the toaster and the fruit bowl. Sweep up anything you dropped on the floor.
+If missed: the next person to cook clears the mess onto a tray, leaves it outside the cook's bedroom door, and sends one message saying so.`;
+
+const kitchen6 = `Rule 6: A quiet kitchen after 23:00
+After eleven at night, the kitchen is for quiet use only: making a drink or a snack is fine, cooking a full meal with the extractor fan running is not. Close cupboard doors gently, keep music in headphones, and shut the kitchen door if anyone's bedroom is next to it. Anyone with an early start can ask for the kitchen to be quiet from ten, and the others agree whenever they can.
+If missed: the person who was woken mentions it the next day, calmly and in person, and if it keeps happening it goes on the agenda for the next house meeting.`;
+
 export const DEMO_PACKS: DemoPack[] = [
   {
     title: "Weeknight Vegetarian, 8 recipes",
@@ -1434,6 +2422,176 @@ export const DEMO_PACKS: DemoPack[] = [
     windowSeconds: 3 * 86400,
     note: "A short craft list on commit messages; rule 6 has no example, breaking promise 1.",
     hint: "One rule breaks promise P1: it has no Example line. Every rule is under 200 words, so P2 holds throughout.",
+  },
+  {
+    title: "Lunchbox recipes, 6 recipes",
+    kind: "recipes",
+    promises: LUNCHBOX_PROMISES,
+    sections: [lunch1, lunch2, lunch3, lunch4, lunch5, lunch6],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Six packed lunches, each with a Keeps line; recipe 4 takes 35 minutes, breaking promise 1.",
+    hint: "One recipe breaks promise P1: its total time is over 20 minutes. Every recipe has a Keeps line and makes two lunchbox portions, so P2 and P3 hold.",
+  },
+  {
+    title: "One-pan dinners, 6 recipes",
+    kind: "recipes",
+    promises: ONE_PAN_PROMISES,
+    sections: [pan1, pan2, pan3, pan4, pan5, pan6],
+    priceGen: "1",
+    windowSeconds: 3 * 86400,
+    note: "Six dinners for four in one pan or tray; recipe 3 boils its pasta in a second pot, breaking promise 1.",
+    hint: "One recipe breaks promise P1: it uses a second pot. Every recipe serves 4 and states a total time of 45 minutes or less, so P2 and P3 hold.",
+  },
+  {
+    title: "Slow-cooker meals, 6 recipes",
+    kind: "recipes",
+    promises: SLOW_PROMISES,
+    sections: [slow1, slow2, slow3, slow4, slow5, slow6],
+    priceGen: "1",
+    windowSeconds: 300,
+    note: "Six meals made in the slow cooker alone, each with a time on low and on high; every promise holds, and the 5-minute window shows a release.",
+    hint: "Every promise holds. Each recipe gives a time on low and a time on high, uses nothing but the slow cooker, and serves 4 to 6; a dispute should come back keeps, and after five minutes anyone can press Release.",
+  },
+  {
+    title: "Repair requests to a landlord, 5 templates",
+    kind: "templates",
+    promises: LANDLORD_PROMISES,
+    sections: [landlord1, landlord2, landlord3, landlord4, landlord5],
+    priceGen: "0.5",
+    windowSeconds: 86400,
+    note: "Five polite repair requests, from a broken boiler to a follow-up; every promise holds.",
+    hint: "Every promise holds. Each template has a subject line, asks for a reply by a calendar date, and never threatens to withhold rent; a dispute should come back keeps.",
+  },
+  {
+    title: "Apology emails to customers, 6 templates",
+    kind: "templates",
+    promises: APOLOGY_PROMISES,
+    sections: [apology1, apology2, apology3, apology4, apology5, apology6],
+    priceGen: "1",
+    windowSeconds: 2 * 86400,
+    note: "Six apologies for a late, wrong, damaged or missing order; template 4 offers a discount code, breaking promise 3.",
+    hint: "One template breaks promise P3: it offers a discount code. Every template greets the customer by first name and has a What we have done line, so P1 and P2 hold.",
+  },
+  {
+    title: "Chemistry: atoms and bonding, 6 cards",
+    kind: "notes",
+    promises: CHEM_PROMISES,
+    sections: [chem1, chem2, chem3, chem4, chem5, chem6],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Six revision cards from the nucleus to metallic bonds; card 3 has no Key term line, breaking promise 1.",
+    hint: "One card breaks promise P1: it has no Key term line. Every card ends with a Check yourself question and its answer and stays under 200 words, so P2 and P3 hold.",
+  },
+  {
+    title: "First-aid basics, 6 cards",
+    kind: "notes",
+    promises: FIRST_AID_PROMISES,
+    sections: [aid1, aid2, aid3, aid4, aid5, aid6],
+    priceGen: "0.5",
+    windowSeconds: 86400,
+    note: "Six first-aid reminders with numbered steps; card 3 gives its steps as a paragraph instead of a numbered list, breaking promise 1.",
+    hint: "One card breaks promise P1: its steps are not a numbered list. Every card says when to call emergency services and names no medicine or dose, so P2 and P3 hold.",
+  },
+  {
+    title: "World capitals by region, 6 cards",
+    kind: "notes",
+    promises: CAPITALS_PROMISES,
+    sections: [capitals1, capitals2, capitals3, capitals4, capitals5, capitals6],
+    priceGen: "0.5",
+    windowSeconds: 300,
+    note: "Six regions, each with five or more capitals and a Trap line; every promise holds, and the 5-minute window shows a release.",
+    hint: "Every promise holds. Each card lists at least five countries with their capitals, ends with a Trap line, and stays under 150 words; a dispute should come back keeps, and after five minutes anyone can press Release.",
+  },
+  {
+    title: "Poetry prompts in fixed forms, 6 prompts",
+    kind: "prompts",
+    promises: POETRY_PROMISES,
+    sections: [poem1, poem2, poem3, poem4, poem5, poem6],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Six prompts from haiku to villanelle; prompt 4 is free verse with no set length, breaking promise 1.",
+    hint: "One prompt breaks promise P1: it sets no number of lines. Every prompt has a Must use line and stays under 150 words, so P2 and P3 hold.",
+  },
+  {
+    title: "Dialogue prompts for two voices, 6 prompts",
+    kind: "prompts",
+    promises: DIALOGUE_PROMISES,
+    sections: [dialogue1, dialogue2, dialogue3, dialogue4, dialogue5, dialogue6],
+    priceGen: "1",
+    windowSeconds: 3 * 86400,
+    note: "Six two-person scenes with an opening line; prompt 3's Characters line names three people, breaking promise 1.",
+    hint: "One prompt breaks promise P1: its Characters line names three people. Every prompt gives an opening line in quotation marks and stays under 150 words, so P2 and P3 hold.",
+  },
+  {
+    title: "Journaling prompts for students, 8 prompts",
+    kind: "prompts",
+    promises: STUDENT_PROMISES,
+    sections: [student1, student2, student3, student4, student5, student6, student7, student8],
+    priceGen: "0.5",
+    windowSeconds: 86400,
+    note: "Eight short prompts for a school term, each with a writing time and ending on a question; every promise holds.",
+    hint: "Every promise holds. Each prompt has a Time line, ends with a question mark, and stays under 120 words; a dispute should come back keeps.",
+  },
+  {
+    title: "A weekend in Porto, 6 stops",
+    kind: "guide",
+    promises: PORTO_PROMISES,
+    sections: [porto1, porto2, porto3, porto4, porto5, porto6],
+    priceGen: "1.5",
+    windowSeconds: 3 * 86400,
+    note: "Two days from São Bento station to the sea at Foz; stop 4, the port wine lodges, gives no price, breaking promise 3.",
+    hint: "One stop breaks promise P3: it gives no price and does not say it is free. Every stop gives its opening hours, and every stop after the first says how to get there and how long it takes, so P1 and P2 hold.",
+  },
+  {
+    title: "A first day hike near the city, 6 steps",
+    kind: "guide",
+    promises: HIKE_PROMISES,
+    sections: [hike1, hike2, hike3, hike4, hike5, hike6],
+    priceGen: "1",
+    windowSeconds: 2 * 86400,
+    note: "From choosing a route to the train home; step 5 ends with a checklist of only two items, breaking promise 2.",
+    hint: "One step breaks promise P2: its checklist has fewer than three items. Every step has a Time needed line and names no brand or shop, so P1 and P3 hold.",
+  },
+  {
+    title: "A first museum visit, 6 steps",
+    kind: "guide",
+    promises: MUSEUM_PROMISES,
+    sections: [museum1, museum2, museum3, museum4, museum5, museum6],
+    priceGen: "0.5",
+    windowSeconds: 86400,
+    note: "A two-hour plan for one part of a big museum, each step timed and ending with something to try; every promise holds.",
+    hint: "Every promise holds. Each step says how many minutes it takes, ends with a Try this line, and needs no paid guide or audio guide; a dispute should come back keeps.",
+  },
+  {
+    title: "House rules for board game nights, 6 rules",
+    kind: "other",
+    promises: BOARD_GAME_PROMISES,
+    sections: [boardGame1, boardGame2, boardGame3, boardGame4, boardGame5, boardGame6],
+    priceGen: "0.5",
+    windowSeconds: 2 * 86400,
+    note: "Six house rules for any game night; rule 5 gives no Why line, breaking promise 1.",
+    hint: "One rule breaks promise P1: it has no Why line. No rule names a specific game and every rule is under 150 words, so P2 and P3 hold.",
+  },
+  {
+    title: "Keyboard shortcuts cheat sheet, 6 cards",
+    kind: "other",
+    promises: SHORTCUT_PROMISES,
+    sections: [shortcuts1, shortcuts2, shortcuts3, shortcuts4, shortcuts5, shortcuts6],
+    priceGen: "1",
+    windowSeconds: 3 * 86400,
+    note: "Six cards of everyday shortcuts for Ctrl and Cmd keyboards; card 5 gives the Ctrl versions only, breaking promise 1.",
+    hint: "One card breaks promise P1: it gives only the Ctrl keyboard versions. Every card lists at least five shortcuts and ends with a Practice line, so P2 and P3 hold.",
+  },
+  {
+    title: "Shared kitchen rules for housemates, 6 rules",
+    kind: "other",
+    promises: KITCHEN_PROMISES,
+    sections: [kitchen1, kitchen2, kitchen3, kitchen4, kitchen5, kitchen6],
+    priceGen: "0.5",
+    windowSeconds: 300,
+    note: "Six kitchen rules with what happens when one is missed, and no fines; every promise holds, and the 5-minute window shows a release.",
+    hint: "Every promise holds. Each rule has an If missed line, none involves a fine or other money penalty, and each is under 150 words; a dispute should come back keeps, and after five minutes anyone can press Release.",
   },
 ];
 
